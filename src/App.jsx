@@ -170,14 +170,6 @@ const App = () => {
           }
         />
         <Route
-          path="redeem-bonus"
-          element={
-            <ProtectedRoute>
-              <RedeemBonus />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="my-teams"
           element={
             <ProtectedRoute>
