@@ -234,13 +234,12 @@ const Login = () => {
 
             {/* Forgot Password Link */}
             <div className="flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => alert('Forgot password feature coming soon')}
+              <Link
+                to="/forgot-password"
                 className="text-sm text-primary hover:text-accent transition-colors"
               >
                 Forgot password?
-              </button>
+              </Link>
             </div>
 
             {/* Error message from Redux */}

@@ -59,6 +59,36 @@ export const logoutUser = createAsyncThunk(
   }
 );
 
+export const verifyIdentity = createAsyncThunk(
+  'auth/verifyIdentity',
+  async ({ idType, idNumber }, { rejectWithValue }) => {
+    try {
+      const response = await authAPI.verifyIdentity(idType, idNumber);
+      if (response.success) {
+        return response.data;
+      }
+      return rejectWithValue('Identity verification failed');
+    } catch (error) {
+      return rejectWithValue(error.message || 'Identity verification failed');
+    }
+  }
+);
+
+export const resetPassword = createAsyncThunk(
+  'auth/resetPassword',
+  async ({ userId, newPassword }, { rejectWithValue }) => {
+    try {
+      const response = await authAPI.resetPassword(userId, newPassword);
+      if (response.success) {
+        return response;
+      }
+      return rejectWithValue('Password reset failed');
+    } catch (error) {
+      return rejectWithValue(error.message || 'Password reset failed');
+    }
+  }
+);
+
 // Get initial state from localStorage
 const getInitialState = () => {
   const token = localStorage.getItem('token');
@@ -158,6 +188,36 @@ const authSlice = createSlice({
         // Ensure localStorage is cleared
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+      });
+
+    // Verify Identity
+    builder
+      .addCase(verifyIdentity.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(verifyIdentity.fulfilled, (state, action) => {
+        state.loading = false;
+        state.error = null;
+      })
+      .addCase(verifyIdentity.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      });
+
+    // Reset Password
+    builder
+      .addCase(resetPassword.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(resetPassword.fulfilled, (state) => {
+        state.loading = false;
+        state.error = null;
+      })
+      .addCase(resetPassword.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
       });
   },
 });

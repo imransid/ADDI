@@ -284,6 +284,68 @@ export const authAPI = {
     localStorage.removeItem('user');
     return { success: true };
   },
+
+  // Verify user identity using Passport or NID
+  verifyIdentity: async (idType, idNumber) => {
+    try {
+      const usersRef = collection(db, 'users');
+      let querySnapshot;
+      
+      if (idType === 'nid') {
+        const q = query(usersRef, where('nid', '==', idNumber));
+        querySnapshot = await getDocs(q);
+      } else if (idType === 'passport') {
+        const q = query(usersRef, where('passport', '==', idNumber));
+        querySnapshot = await getDocs(q);
+      } else {
+        throw new Error('Invalid ID type. Must be "nid" or "passport"');
+      }
+
+      if (querySnapshot.empty) {
+        throw new Error(`${idType === 'nid' ? 'NID' : 'Passport'} not found`);
+      }
+
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data();
+
+      return {
+        success: true,
+        data: {
+          userId: userDoc.id,
+          phone: userData.phone,
+          name: userData.name,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Identity verification failed');
+    }
+  },
+
+  // Reset password after identity verification
+  resetPassword: async (userId, newPassword) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        throw new Error('User not found');
+      }
+
+      // Hash and update password
+      const hashedPassword = hashPassword(newPassword);
+      await updateDoc(userRef, {
+        password: hashedPassword,
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        message: 'Password reset successfully',
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Password reset failed');
+    }
+  },
 };
 
 // User API

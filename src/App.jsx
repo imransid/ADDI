@@ -21,6 +21,7 @@ import MyTeams from "./pages/MyTeams";
 import Online from "./pages/Online";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import AdminPanel from "./pages/AdminPanel";
 import AdminProtectedRoute from "./components/AdminProtectedRoute";
 import SeedAdmin from "./utils/seedAdmin";
@@ -73,6 +74,7 @@ const App = () => {
       {/* Auth routes without Layout - redirect if already authenticated */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       
       {/* Seed Admin Route - Remove this after seeding */}
       <Route path="/seed-admin" element={<SeedAdmin />} />
