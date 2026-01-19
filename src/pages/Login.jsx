@@ -5,7 +5,7 @@ import { loginUser, clearError } from '../store/authSlice';
 
 /**
  * Login page with modern design
- * Supports login with Phone (for admins), NID, or Passport (for consumers)
+ * Login using phone number and password
  */
 const Login = () => {
   const navigate = useNavigate();
@@ -13,9 +13,8 @@ const Login = () => {
   const dispatch = useDispatch();
   const { isAuthenticated, loading, error } = useSelector((state) => state.auth);
   
-  const [loginType, setLoginType] = useState('nid'); // 'phone', 'nid', or 'passport'
   const [formData, setFormData] = useState({
-    identifier: '',
+    phone: '',
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -55,21 +54,13 @@ const Login = () => {
     }
   };
 
-  const handleLoginTypeChange = (type) => {
-    setLoginType(type);
-    setFormData({ identifier: '', password: '' });
-    setErrors({});
-    dispatch(clearError());
-  };
-
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.identifier.trim()) {
-      const fieldName = loginType === 'phone' ? 'Phone number' : loginType === 'nid' ? 'NID' : 'Passport';
-      newErrors.identifier = `${fieldName} is required`;
-    } else if (loginType === 'phone' && !/^[0-9]{10,15}$/.test(formData.identifier.replace(/\s+/g, ''))) {
-      newErrors.identifier = 'Please enter a valid phone number';
+    if (!formData.phone.trim()) {
+      newErrors.phone = 'Phone number is required';
+    } else if (!/^[0-9]{10,15}$/.test(formData.phone.replace(/\s+/g, ''))) {
+      newErrors.phone = 'Please enter a valid phone number (10-15 digits)';
     }
 
     if (!formData.password) {
@@ -88,9 +79,9 @@ const Login = () => {
       try {
         const result = await dispatch(
           loginUser({
-            identifier: formData.identifier.trim(),
+            identifier: formData.phone.trim(),
             password: formData.password,
-            loginType: loginType,
+            loginType: 'phone',
           })
         ).unwrap();
         
@@ -105,32 +96,6 @@ const Login = () => {
         // Error is handled by Redux state
         console.error('Login failed:', err);
       }
-    }
-  };
-
-  const getPlaceholder = () => {
-    switch (loginType) {
-      case 'phone':
-        return 'Enter your phone number';
-      case 'nid':
-        return 'Enter your NID number';
-      case 'passport':
-        return 'Enter your Passport number';
-      default:
-        return 'Enter your identifier';
-    }
-  };
-
-  const getLabel = () => {
-    switch (loginType) {
-      case 'phone':
-        return 'Phone Number';
-      case 'nid':
-        return 'NID (National ID)';
-      case 'passport':
-        return 'Passport Number';
-      default:
-        return 'Identifier';
     }
   };
 
@@ -161,99 +126,37 @@ const Login = () => {
 
         {/* Login Form */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Login Type Selector */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Login with:
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleLoginTypeChange('nid')}
-                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                  loginType === 'nid'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                NID
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLoginTypeChange('passport')}
-                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                  loginType === 'passport'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Passport
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLoginTypeChange('phone')}
-                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                  loginType === 'phone'
-                    ? 'bg-primary text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Phone
-              </button>
-            </div>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Identifier Field (NID/Passport/Phone) */}
+            {/* Phone Number Field */}
             <div>
-              <label htmlFor="identifier" className="block text-sm font-medium text-gray-700 mb-2">
-                {getLabel()}
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  {loginType === 'phone' ? (
-                    <svg
-                      className="h-5 w-5 text-gray-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-                    </svg>
-                  ) : loginType === 'nid' ? (
-                    <svg
-                      className="h-5 w-5 text-gray-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                    </svg>
-                  ) : (
-                    <svg
-                      className="h-5 w-5 text-gray-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                    </svg>
-                  )}
+                  <svg
+                    className="h-5 w-5 text-gray-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                  </svg>
                 </div>
                 <input
-                  type="text"
-                  id="identifier"
-                  name="identifier"
-                  value={formData.identifier}
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value={formData.phone}
                   onChange={handleChange}
-                  placeholder={getPlaceholder()}
+                  placeholder="Enter your phone number"
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
-                    errors.identifier ? 'border-red-500' : 'border-gray-300'
+                    errors.phone ? 'border-red-500' : 'border-gray-300'
                   }`}
                 />
               </div>
-              {errors.identifier && (
-                <p className="mt-1 text-sm text-red-600">{errors.identifier}</p>
+              {errors.phone && (
+                <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
               )}
             </div>
 
