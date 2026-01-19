@@ -258,30 +258,7 @@ export const authAPI = {
           // Check and update VIP level for referrer
           try {
             const { updateVIPLevel } = await import('./vipService');
-            const updatedReferrerDoc = await getDoc(referrerRef);
-            if (updatedReferrerDoc.exists()) {
-              const updatedReferrerData = updatedReferrerDoc.data();
-              const newReferralCount = updatedReferrerData.totalReferrals || 0;
-              
-              // Calculate new VIP level
-              let newVIPLevel = 0; // NONE
-              if (newReferralCount >= 20) {
-                newVIPLevel = 2; // VIP 2
-              } else if (newReferralCount >= 5) {
-                newVIPLevel = 1; // VIP 1
-              }
-
-              const currentVIPLevel = updatedReferrerData.vipLevel || 0;
-              
-              // Update VIP level if changed
-              if (newVIPLevel !== currentVIPLevel) {
-                await updateDoc(referrerRef, {
-                  vipLevel: newVIPLevel,
-                  vipLevelUpdatedAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                });
-              }
-            }
+            await updateVIPLevel(referrerId);
           } catch (vipError) {
             console.error('Error updating VIP level:', vipError);
             // Don't fail registration if VIP update fails
@@ -1493,20 +1470,25 @@ export const vipAPI = {
 
       const userData = userDoc.data();
       const referralCount = userData.totalReferrals || 0;
-      const vipLevel = userData.vipLevel || 0;
+      const storedVIPLevel = userData.vipLevel || 0;
       const lastWeeklyReward = userData.lastWeeklyReward;
       const lastMonthlyReward = userData.lastMonthlyReward;
 
-      // Calculate VIP level based on current referrals
-      let calculatedVIPLevel = 0;
-      if (referralCount >= 20) {
-        calculatedVIPLevel = 2; // VIP 2
-      } else if (referralCount >= 5) {
-        calculatedVIPLevel = 1; // VIP 1
+      // Calculate VIP level based on current referrals using the service function
+      const { calculateVIPLevel, VIP_REWARDS, getVIPLevelName, updateVIPLevel } = await import('./vipService');
+      const calculatedVIPLevel = calculateVIPLevel(referralCount);
+
+      // Sync VIP level with database if it differs (e.g., if referral count was updated manually)
+      if (calculatedVIPLevel !== storedVIPLevel) {
+        try {
+          await updateVIPLevel(user.id);
+        } catch (syncError) {
+          console.error('Error syncing VIP level:', syncError);
+          // Continue even if sync fails
+        }
       }
 
       // Get VIP rewards info
-      const { VIP_REWARDS, getVIPLevelName } = await import('./vipService');
       const weeklyReward = VIP_REWARDS[calculatedVIPLevel]?.weekly || 0;
       const monthlyReward = VIP_REWARDS[calculatedVIPLevel]?.monthly || 0;
 

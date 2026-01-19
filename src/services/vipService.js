@@ -343,6 +343,14 @@ export const distributeMonthlyVIPReward = async (userId) => {
  */
 export const checkAndDistributeVIPRewards = async (userId) => {
   try {
+    // Ensure VIP level is synced before distributing rewards
+    try {
+      await updateVIPLevel(userId);
+    } catch (syncError) {
+      console.error('Error syncing VIP level before reward distribution:', syncError);
+      // Continue even if sync fails
+    }
+
     const results = {
       weekly: null,
       monthly: null,
