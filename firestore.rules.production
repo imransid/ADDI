@@ -1,0 +1,103 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================
+    // PRODUCTION RULES (Secure)
+    // ============================================
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Helper function to check if user is active member
+    function isActiveMember() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own data
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Anyone can create a new user (for registration)
+      allow create: if true;
+      
+      // Users can update their own payment details (bikash, nagad), admins can update everything
+      allow update: if isAdmin() || 
+                      (isAuthenticated() && request.auth.uid == userId && 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bikash', 'nagad', 'updatedAt']));
+      
+      // Only admins can delete users
+      allow delete: if isAdmin();
+    }
+    
+    // Wallets collection
+    match /wallets/{walletId} {
+      // Users can read their own wallet
+      allow read: if isAuthenticated() && request.auth.uid == walletId;
+      
+      // Users can create their own wallet
+      allow create: if isAuthenticated() && request.auth.uid == walletId;
+      
+      // Users can update their own wallet, or admins can update any wallet
+      allow update: if (isAuthenticated() && request.auth.uid == walletId) || isAdmin();
+      
+      // Only admins can delete wallets
+      allow delete: if isAdmin();
+    }
+    
+    // Transactions collection
+    match /transactions/{transactionId} {
+      // Users can read their own transactions, admins can read all
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      
+      // Users can create their own transactions
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Only admins can update transactions (for approving/rejecting withdrawals)
+      allow update: if isAdmin();
+      
+      // Only admins can delete transactions
+      allow delete: if isAdmin();
+    }
+    
+    // Teams collection
+    match /teams/{teamId} {
+      // Users can read their own team data, admins can read all
+      allow read: if (isAuthenticated() && request.auth.uid == teamId) || isAdmin();
+      
+      // Users can create their own team data
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own team, or admins can update any team
+      allow update: if (isAuthenticated() && request.auth.uid == teamId) || isAdmin();
+      
+      // Only admins can delete teams
+      allow delete: if isAdmin();
+    }
+    
+    // Products collection
+    match /products/{productId} {
+      // Everyone can read products (if authenticated and active)
+      allow read: if isAuthenticated() && isActiveMember();
+      
+      // Only admins can create, update, or delete products
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

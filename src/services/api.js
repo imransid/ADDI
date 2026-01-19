@@ -1,0 +1,1426 @@
+/**
+ * API Service - Firebase Firestore backend
+ * All data is stored and retrieved from Firebase Firestore
+ */
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  query,
+  where,
+  addDoc,
+  serverTimestamp,
+  increment,
+} from 'firebase/firestore';
+import { db } from '../config/firebase';
+
+// Simple password hashing (for production, use a proper hashing library)
+const hashPassword = (password) => {
+  // Simple hash for demo - in production use bcrypt or similar
+  return btoa(password);
+};
+
+const verifyPassword = (password, hashedPassword) => {
+  return btoa(password) === hashedPassword;
+};
+
+// Generate a simple token (for demo purposes)
+const generateToken = () => 'token_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
+// Auth API
+export const authAPI = {
+  login: async (identifier, password, loginType = 'phone') => {
+    try {
+      const usersRef = collection(db, 'users');
+      let querySnapshot;
+      
+      // For consumers, allow login with NID or Passport
+      // For admins, use phone (backward compatibility)
+      if (loginType === 'nid') {
+        const q = query(usersRef, where('nid', '==', identifier));
+        querySnapshot = await getDocs(q);
+      } else if (loginType === 'passport') {
+        const q = query(usersRef, where('passport', '==', identifier));
+        querySnapshot = await getDocs(q);
+      } else {
+        // Default: phone login (for admins and backward compatibility)
+        const q = query(usersRef, where('phone', '==', identifier));
+        querySnapshot = await getDocs(q);
+      }
+
+      if (querySnapshot.empty) {
+        throw new Error('Invalid credentials');
+      }
+
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data();
+
+      // Verify password
+      if (!verifyPassword(password, userData.password)) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Check if user is active (admins are always active)
+      const isActive = userData.isActive !== undefined ? userData.isActive : (userData.role === 'admin' ? true : false);
+      
+      if (!isActive && userData.role !== 'admin') {
+        throw new Error('Your account is not active. Please contact an administrator.');
+      }
+
+      // Update last login
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        lastLogin: serverTimestamp(),
+      });
+
+      const token = generateToken();
+
+      return {
+        success: true,
+        data: {
+          token,
+          user: {
+            id: userDoc.id,
+            phone: userData.phone,
+            name: userData.name,
+            role: userData.role || 'consumer',
+            isActive: isActive,
+          },
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Login failed');
+    }
+  },
+
+  register: async (name, phone, password, nid, passport = null, referralCode = null) => {
+    try {
+      // Check if user already exists by phone
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('phone', '==', phone));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        throw new Error('Phone number already registered');
+      }
+
+      // Check if NID already exists (if provided)
+      if (nid) {
+        const nidQuery = query(usersRef, where('nid', '==', nid));
+        const nidSnapshot = await getDocs(nidQuery);
+        if (!nidSnapshot.empty) {
+          throw new Error('NID already registered');
+        }
+      }
+
+      // Check if Passport already exists (if provided)
+      if (passport) {
+        const passportQuery = query(usersRef, where('passport', '==', passport));
+        const passportSnapshot = await getDocs(passportQuery);
+        if (!passportSnapshot.empty) {
+          throw new Error('Passport already registered');
+        }
+      }
+
+      // Generate unique referral code for new user (8 characters)
+      const generateRefCode = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let code = '';
+        for (let i = 0; i < 8; i++) {
+          code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return code;
+      };
+
+      let newReferralCode = generateRefCode();
+      let referrerId = null;
+
+      // Check if referral code is valid and find referrer
+      if (referralCode) {
+        // Try to find user by referral code
+        const refQuery = query(usersRef, where('referralCode', '==', referralCode));
+        const refSnapshot = await getDocs(refQuery);
+        
+        if (!refSnapshot.empty) {
+          const referrerDoc = refSnapshot.docs[0];
+          referrerId = referrerDoc.id;
+        } else {
+          // Fallback: try finding by user ID (for backward compatibility)
+          const refByIdDoc = await getDoc(doc(db, 'users', referralCode));
+          if (refByIdDoc.exists()) {
+            referrerId = refByIdDoc.id;
+          }
+        }
+      }
+
+      // Create new user
+      const hashedPassword = hashPassword(password);
+      const newUserRef = doc(collection(db, 'users'));
+
+      // All registered users are consumers only
+      await setDoc(newUserRef, {
+        name,
+        phone,
+        password: hashedPassword,
+        nid: nid || null,
+        passport: passport || null,
+        role: 'consumer',
+        isActive: false, // Consumers need activation by admin
+        referralCode: newReferralCode,
+        referredBy: referrerId || null,
+        totalReferrals: 0,
+        createdAt: serverTimestamp(),
+        lastLogin: null,
+      });
+
+      // Get referral bonus amount from settings
+      let referralBonus = 200; // Default fallback
+      try {
+        const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
+        if (settingsDoc.exists()) {
+          referralBonus = settingsDoc.data().referralBonus || 200;
+        }
+      } catch (error) {
+        console.error('Failed to fetch referral bonus from settings, using default:', error);
+      }
+
+      // Calculate initial balance (referralBonus if referred, 0 otherwise)
+      const initialBalance = referrerId ? referralBonus : 0;
+
+      // Initialize wallet for new user
+      await setDoc(doc(db, 'wallets', newUserRef.id), {
+        userId: newUserRef.id,
+        rechargeWallet: 0,
+        balanceWallet: initialBalance, // Give 200 balance if referred
+        totalEarnings: 0,
+        totalWithdrawals: 0,
+        incomeToday: 0,
+        incomeYesterday: 0,
+        lossToday: 0,
+        lossTotal: 0,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Update referrer's referral count and give bonus if applicable
+      if (referrerId) {
+        const referrerRef = doc(db, 'users', referrerId);
+        const referrerDoc = await getDoc(referrerRef);
+        if (referrerDoc.exists()) {
+          // Update referral count
+          await updateDoc(referrerRef, {
+            totalReferrals: increment(1),
+            updatedAt: serverTimestamp(),
+          });
+
+          // Give bonus to referrer (same amount as new user gets)
+          const referrerWalletRef = doc(db, 'wallets', referrerId);
+          const referrerWalletDoc = await getDoc(referrerWalletRef);
+          
+          if (referrerWalletDoc.exists()) {
+            // Add bonus to referrer's balance and earnings
+            await updateDoc(referrerWalletRef, {
+              balanceWallet: increment(referralBonus),
+              totalEarnings: increment(referralBonus),
+              incomeToday: increment(referralBonus),
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            // Create wallet if it doesn't exist
+            await setDoc(referrerWalletRef, {
+              userId: referrerId,
+              rechargeWallet: 0,
+              balanceWallet: referralBonus,
+              totalEarnings: referralBonus,
+              totalWithdrawals: 0,
+              incomeToday: referralBonus,
+              incomeYesterday: 0,
+              lossToday: 0,
+              lossTotal: 0,
+              updatedAt: serverTimestamp(),
+            });
+          }
+
+          // Create transaction record for referrer's bonus
+          await addDoc(collection(db, 'transactions'), {
+            userId: referrerId,
+            type: 'referral_bonus',
+            amount: referralBonus,
+            status: 'completed',
+            description: `Referral bonus for ${name} (${phone})`,
+            referredUserId: newUserRef.id,
+            transactionId: 'REF_' + Date.now() + '_' + referrerId,
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
+
+      const token = generateToken();
+
+      return {
+        success: true,
+        data: {
+          token,
+          user: {
+            id: newUserRef.id,
+            phone,
+            name,
+            role: 'consumer',
+            isActive: false,
+          },
+          referralBonus: initialBalance > 0 ? initialBalance : 0,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Registration failed');
+    }
+  },
+
+  logout: async () => {
+    // Clear all local storage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    return { success: true };
+  },
+};
+
+// User API
+export const userAPI = {
+  getUserProfile: async (token) => {
+    try {
+      // Get user ID from token or stored user data
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const userDoc = await getDoc(doc(db, 'users', user.id));
+
+      if (!userDoc.exists()) {
+        throw new Error('User not found');
+      }
+
+      const userData = userDoc.data();
+
+      return {
+        success: true,
+        data: {
+          id: userDoc.id,
+          phone: userData.phone,
+          name: userData.name,
+          role: userData.role || 'user',
+          isActive: userData.isActive !== undefined ? userData.isActive : false,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch profile');
+    }
+  },
+
+  updateProfile: async (token, data) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const userRef = doc(db, 'users', user.id);
+
+      await updateDoc(userRef, {
+        ...data,
+        updatedAt: serverTimestamp(),
+      });
+
+      const updatedDoc = await getDoc(userRef);
+
+      return {
+        success: true,
+        data: { id: updatedDoc.id, ...updatedDoc.data() },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update profile');
+    }
+  },
+};
+
+// Wallet API
+export const walletAPI = {
+  getWallet: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const walletDoc = await getDoc(doc(db, 'wallets', user.id));
+
+      if (!walletDoc.exists()) {
+        // Create wallet if doesn't exist
+        await setDoc(doc(db, 'wallets', user.id), {
+          userId: user.id,
+          rechargeWallet: 0,
+          balanceWallet: 0,
+          totalEarnings: 0,
+          totalWithdrawals: 0,
+          incomeToday: 0,
+          incomeYesterday: 0,
+          lossToday: 0,
+          lossTotal: 0,
+          updatedAt: serverTimestamp(),
+        });
+
+        return {
+          success: true,
+          data: {
+            rechargeWallet: 0,
+            balanceWallet: 0,
+            totalEarnings: 0,
+            totalWithdrawals: 0,
+            incomeToday: 0,
+            incomeYesterday: 0,
+            lossToday: 0,
+            lossTotal: 0,
+          },
+        };
+      }
+
+      const walletData = walletDoc.data();
+      
+      // Debug: Log raw wallet data
+      console.log('Raw wallet data from Firebase:', walletData);
+      console.log('User ID:', user.id);
+
+      // Ensure all values are numbers, handle null/undefined
+      const rechargeWallet = walletData.rechargeWallet != null ? Number(walletData.rechargeWallet) : 0;
+      const balanceWallet = walletData.balanceWallet != null ? Number(walletData.balanceWallet) : 0;
+      const totalEarnings = walletData.totalEarnings != null ? Number(walletData.totalEarnings) : 0;
+      const totalWithdrawals = walletData.totalWithdrawals != null ? Number(walletData.totalWithdrawals) : 0;
+      const incomeToday = walletData.incomeToday != null ? Number(walletData.incomeToday) : 0;
+      const incomeYesterday = walletData.incomeYesterday != null ? Number(walletData.incomeYesterday) : 0;
+      const lossToday = walletData.lossToday != null ? Number(walletData.lossToday) : 0;
+      const lossTotal = walletData.lossTotal != null ? Number(walletData.lossTotal) : 0;
+
+      const walletResponse = {
+        success: true,
+        data: {
+          rechargeWallet: isNaN(rechargeWallet) ? 0 : rechargeWallet,
+          balanceWallet: isNaN(balanceWallet) ? 0 : balanceWallet,
+          totalEarnings: isNaN(totalEarnings) ? 0 : totalEarnings,
+          totalWithdrawals: isNaN(totalWithdrawals) ? 0 : totalWithdrawals,
+          incomeToday: isNaN(incomeToday) ? 0 : incomeToday,
+          incomeYesterday: isNaN(incomeYesterday) ? 0 : incomeYesterday,
+          lossToday: isNaN(lossToday) ? 0 : lossToday,
+          lossTotal: isNaN(lossTotal) ? 0 : lossTotal,
+        },
+      };
+
+      console.log('Processed wallet response:', walletResponse);
+      return walletResponse;
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch wallet');
+    }
+  },
+
+  recharge: async (token, amount, proofImageUrl = '') => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+
+      // Ensure amount is a number
+      const amountNumber = typeof amount === 'number' ? amount : parseFloat(amount);
+      if (isNaN(amountNumber) || amountNumber <= 0) {
+        throw new Error('Invalid recharge amount');
+      }
+
+      // Create pending recharge request
+      const transactionRef = await addDoc(collection(db, 'transactions'), {
+        userId: user.id,
+        type: 'recharge',
+        amount: amountNumber, // Store as number
+        status: 'pending',
+        proofImageUrl: proofImageUrl || '',
+        transactionId: 'TXN_' + Date.now(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: {
+          transactionId: transactionRef.id,
+          status: 'pending',
+          message: 'Recharge request submitted. Waiting for admin approval.',
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Recharge failed');
+    }
+  },
+
+  withdraw: async (token, amount, paymentMethod = null, paymentDetails = null, vatTax = null, netAmount = null) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const walletRef = doc(db, 'wallets', user.id);
+
+      // Get current wallet
+      const walletDoc = await getDoc(walletRef);
+      if (!walletDoc.exists()) {
+        throw new Error('Wallet not found');
+      }
+
+      const walletData = walletDoc.data();
+      const currentBalance = walletData.balanceWallet != null ? Number(walletData.balanceWallet) : 0;
+      
+      // Check if withdrawals are allowed (only Saturday and Sunday)
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        throw new Error(`Withdrawals are only available on Saturday and Sunday. Today is ${dayNames[dayOfWeek]}.`);
+      }
+      
+      // Check if user has purchased any products (account lock check)
+      const userProductsRef = collection(db, 'userProducts');
+      const purchaseQuery = query(userProductsRef, where('userId', '==', user.id));
+      const purchaseSnapshot = await getDocs(purchaseQuery);
+      
+      if (purchaseSnapshot.empty) {
+        throw new Error('Account is locked. You must purchase at least one product before you can withdraw.');
+      }
+      
+      // Check if user has sufficient balance
+      if (amount > currentBalance) {
+        throw new Error(`Insufficient balance. Available balance: ${currentBalance.toFixed(2)}`);
+      }
+
+      // Calculate VAT tax if not provided (10% of withdrawal amount)
+      const calculatedVatTax = vatTax !== null ? vatTax : amount * 0.10;
+      const calculatedNetAmount = netAmount !== null ? netAmount : amount - calculatedVatTax;
+
+      const newBalance = currentBalance - amount;
+
+      // Deduct full amount from balance (VAT is deducted from the withdrawal, not the balance)
+      // The full requested amount is deducted, but user receives netAmount after VAT
+      await updateDoc(walletRef, {
+        balanceWallet: increment(-amount),
+        totalWithdrawals: increment(amount),
+        updatedAt: serverTimestamp(),
+      });
+
+      // Create transaction record with pending status (admin approval required)
+      const transactionData = {
+        userId: user.id,
+        type: 'withdraw',
+        amount, // Full withdrawal amount
+        vatTax: calculatedVatTax, // VAT tax (10%)
+        netAmount: calculatedNetAmount, // Amount user will receive after VAT
+        status: 'pending', // Pending admin approval
+        transactionId: 'TXN_' + Date.now(),
+        createdAt: serverTimestamp(),
+      };
+
+      // Add payment method details if provided
+      if (paymentMethod && paymentDetails) {
+        transactionData.paymentMethod = paymentMethod;
+        transactionData.paymentName = paymentDetails.name;
+        transactionData.paymentNumber = paymentDetails.number;
+      }
+
+      const transactionRef = await addDoc(collection(db, 'transactions'), transactionData);
+
+      return {
+        success: true,
+        data: {
+          transactionId: transactionRef.id,
+          newBalance,
+          status: 'pending', // Inform user that withdrawal is pending approval
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Withdrawal failed');
+    }
+  },
+};
+
+// Team API
+export const teamAPI = {
+  getTeam: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+
+      // Get team data from Firestore
+      const teamDoc = await getDoc(doc(db, 'teams', user.id));
+
+      if (teamDoc.exists()) {
+        const teamData = teamDoc.data();
+        return {
+          success: true,
+          data: teamData,
+        };
+      }
+
+      // Return default structure if team doesn't exist
+      const defaultTeam = {
+        userId: user.id,
+        cumulativeRecharge: 0,
+        tiers: {
+          B: {
+            percentage: 11,
+            members: [],
+          },
+          C: {
+            percentage: 4,
+            members: [],
+          },
+          D: {
+            percentage: 2,
+            members: [],
+          },
+        },
+        statistics: {
+          todayNewMembers: 0,
+          yesterdayNewMembers: 0,
+          todayRechargeAmount: 0,
+          yesterdayRechargeAmount: 0,
+          currentMonthRechargeAmount: 0,
+          lastMonthRechargeAmount: 0,
+        },
+        validMembers: [],
+        invalidMembers: [],
+      };
+
+      // Create team document with default data
+      await setDoc(doc(db, 'teams', user.id), {
+        ...defaultTeam,
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: defaultTeam,
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch team data');
+    }
+  },
+};
+
+// Product API
+export const productAPI = {
+  getProducts: async (token) => {
+    try {
+      const productsRef = collection(db, 'products');
+      const querySnapshot = await getDocs(productsRef);
+
+      if (querySnapshot.empty) {
+        // Create default products if none exist
+        const defaultProducts = [
+          { name: 'Product 1', price: 100 },
+          { name: 'Product 2', price: 200 },
+        ];
+
+        for (const product of defaultProducts) {
+          await addDoc(productsRef, {
+            ...product,
+            createdAt: serverTimestamp(),
+          });
+        }
+
+        return {
+          success: true,
+          data: {
+            products: defaultProducts.map((p, idx) => ({ id: `temp_${idx}`, ...p })),
+          },
+        };
+      }
+
+      const products = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      return {
+        success: true,
+        data: { products },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch products');
+    }
+  },
+
+  addProduct: async (token, productData) => {
+    try {
+      const productsRef = collection(db, 'products');
+      const productDoc = {
+        name: productData.name,
+        price: productData.price,
+        description: productData.description || '',
+        imageUrl: productData.imageUrl || '',
+        validateDate: productData.validateDate || null,
+        earnAmount: productData.earnAmount || 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      
+      const newProductRef = await addDoc(productsRef, productDoc);
+
+      return {
+        success: true,
+        data: { id: newProductRef.id, ...productDoc },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to add product');
+    }
+  },
+
+  updateProduct: async (token, productId, productData) => {
+    try {
+      const productRef = doc(db, 'products', productId);
+      await updateDoc(productRef, {
+        ...productData,
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: { id: productId, ...productData },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update product');
+    }
+  },
+
+  deleteProduct: async (token, productId) => {
+    try {
+      const productRef = doc(db, 'products', productId);
+      await updateDoc(productRef, {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to delete product');
+    }
+  },
+
+  // Purchase a product
+  purchaseProduct: async (token, productId) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      
+      // Get product details
+      const productDoc = await getDoc(doc(db, 'products', productId));
+      if (!productDoc.exists()) {
+        throw new Error('Product not found');
+      }
+
+      const productData = productDoc.data();
+      if (productData.deleted) {
+        throw new Error('Product is no longer available');
+      }
+
+      // Get user wallet
+      const walletDoc = await getDoc(doc(db, 'wallets', user.id));
+      if (!walletDoc.exists()) {
+        throw new Error('Wallet not found');
+      }
+
+      const walletData = walletDoc.data();
+      const rechargeWallet = walletData.rechargeWallet || 0;
+
+      // Check if user has enough balance
+      if (rechargeWallet < productData.price) {
+        throw new Error('Insufficient balance in recharge wallet');
+      }
+
+      // Check if this is user's first purchase
+      const userProductsRef = collection(db, 'userProducts');
+      const purchaseQuery = query(userProductsRef, where('userId', '==', user.id));
+      const purchaseSnapshot = await getDocs(purchaseQuery);
+      const isFirstPurchase = purchaseSnapshot.empty;
+
+      // Deduct from recharge wallet
+      await updateDoc(doc(db, 'wallets', user.id), {
+        rechargeWallet: increment(-productData.price),
+        updatedAt: serverTimestamp(),
+      });
+
+      // Auto-activate account on first purchase
+      let accountActivated = false;
+      if (isFirstPurchase) {
+        const userRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists() && !userDoc.data().isActive) {
+          await updateDoc(userRef, {
+            isActive: true,
+            activatedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          accountActivated = true;
+          
+          // Update localStorage user object
+          const updatedUser = { ...user, isActive: true };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+        }
+      }
+
+      // Create user product purchase record
+      // Handle validateDate - if it's a Firestore Timestamp, keep it; if it's a Date, convert to Timestamp
+      let validateDateValue = null;
+      if (productData.validateDate) {
+        // If it's already a Firestore Timestamp, use it directly
+        // If it's a Date object, Firestore will convert it automatically
+        validateDateValue = productData.validateDate;
+      }
+
+      const purchaseRef = await addDoc(collection(db, 'userProducts'), {
+        userId: user.id,
+        productId: productId,
+        productName: productData.name,
+        productPrice: productData.price,
+        productDescription: productData.description || '',
+        imageUrl: productData.imageUrl || '', // Product image URL
+        purchaseDate: serverTimestamp(),
+        status: 'active', // active, expired
+        validateDate: validateDateValue, // Validation date from product
+        earnAmount: productData.earnAmount || 0, // Daily earn amount from product
+        lastEarnAttempt: null, // Track last earn attempt time
+        totalEarnings: 0,
+        createdAt: serverTimestamp(),
+      });
+
+      // Create transaction record
+      await addDoc(collection(db, 'transactions'), {
+        userId: user.id,
+        type: 'purchase',
+        amount: productData.price,
+        status: 'completed',
+        productId: productId,
+        purchaseId: purchaseRef.id,
+        transactionId: 'TXN_' + Date.now(),
+        createdAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: {
+          purchaseId: purchaseRef.id,
+          product: {
+            id: productId,
+            name: productData.name,
+            price: productData.price,
+          },
+          accountActivated: accountActivated,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to purchase product');
+    }
+  },
+
+  // Get user's purchased products
+  getUserProducts: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      
+      // Get user's purchased products
+      const userProductsRef = collection(db, 'userProducts');
+      const q = query(userProductsRef, where('userId', '==', user.id));
+      const querySnapshot = await getDocs(q);
+
+      const userProducts = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Fetch missing imageUrls from original products if needed
+      const productIdsToFetch = userProducts
+        .filter(p => !p.imageUrl && p.productId)
+        .map(p => p.productId);
+      
+      const productImageMap = {};
+      if (productIdsToFetch.length > 0) {
+        const productPromises = productIdsToFetch.map(async (productId) => {
+          try {
+            const productDoc = await getDoc(doc(db, 'products', productId));
+            if (productDoc.exists()) {
+              const productData = productDoc.data();
+              if (productData.imageUrl) {
+                productImageMap[productId] = productData.imageUrl;
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to fetch image for product ${productId}:`, error);
+          }
+        });
+        await Promise.all(productPromises);
+      }
+
+      // Separate into unexpired and expired
+      const now = new Date();
+      const unexpired = [];
+      const expired = [];
+
+      userProducts.forEach((product) => {
+        // Add imageUrl from original product if missing
+        if (!product.imageUrl && product.productId && productImageMap[product.productId]) {
+          product.imageUrl = productImageMap[product.productId];
+          // Update the userProduct document with the imageUrl (async, don't wait)
+          updateDoc(doc(db, 'userProducts', product.id), {
+            imageUrl: productImageMap[product.productId],
+            updatedAt: serverTimestamp(),
+          }).catch(err => console.error('Failed to update product imageUrl:', err));
+        }
+        // Use validateDate if available, otherwise fall back to validityDays
+        let expiryDate;
+        if (product.validateDate) {
+          // validateDate is a Firestore Timestamp or Date
+          expiryDate = product.validateDate?.toMillis 
+            ? new Date(product.validateDate.toMillis()) 
+            : new Date(product.validateDate);
+        } else {
+          // Fallback to old validityDays logic
+          const purchaseDate = product.purchaseDate?.toMillis ? new Date(product.purchaseDate.toMillis()) : new Date(product.purchaseDate);
+          const validityDays = product.validityDays || 48;
+          expiryDate = new Date(purchaseDate);
+          expiryDate.setDate(expiryDate.getDate() + validityDays);
+        }
+
+        if (expiryDate > now && product.status === 'active') {
+          unexpired.push({
+            ...product,
+            expiryDate: expiryDate,
+            daysRemaining: Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24)),
+          });
+        } else {
+          // Mark as expired if past validation date
+          if (expiryDate <= now && product.status === 'active') {
+            // Auto-update status to expired (async, don't wait)
+            updateDoc(doc(db, 'userProducts', product.id), {
+              status: 'expired',
+              updatedAt: serverTimestamp(),
+            }).catch(err => console.error('Failed to update product status:', err));
+          }
+          expired.push({
+            ...product,
+            expiryDate: expiryDate,
+          });
+        }
+      });
+
+      return {
+        success: true,
+        data: {
+          unexpired,
+          expired,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch user products');
+    }
+  },
+
+  // Earn from a product (24-hour cooldown + 5-minute window)
+  earnFromProduct: async (token, userProductId) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const now = Date.now();
+
+      // Get user product
+      const userProductRef = doc(db, 'userProducts', userProductId);
+      const userProductDoc = await getDoc(userProductRef);
+      
+      if (!userProductDoc.exists()) {
+        throw new Error('Product not found');
+      }
+
+      const userProduct = userProductDoc.data();
+
+      // Check if product is expired
+      let expiryDate;
+      if (userProduct.validateDate) {
+        expiryDate = userProduct.validateDate?.toMillis 
+          ? new Date(userProduct.validateDate.toMillis()) 
+          : new Date(userProduct.validateDate);
+      } else {
+        const purchaseDate = userProduct.purchaseDate?.toMillis ? new Date(userProduct.purchaseDate.toMillis()) : new Date(userProduct.purchaseDate);
+        const validityDays = userProduct.validityDays || 48;
+        expiryDate = new Date(purchaseDate);
+        expiryDate.setDate(expiryDate.getDate() + validityDays);
+      }
+
+      if (expiryDate <= new Date()) {
+        throw new Error('Product has expired');
+      }
+
+      // Check if product has earn amount
+      const earnAmount = userProduct.earnAmount || 0;
+      if (earnAmount <= 0) {
+        throw new Error('This product does not have an earn amount configured');
+      }
+
+      // Check last earn attempt
+      const lastEarnAttempt = userProduct.lastEarnAttempt?.toMillis 
+        ? userProduct.lastEarnAttempt.toMillis() 
+        : (userProduct.lastEarnAttempt ? new Date(userProduct.lastEarnAttempt).getTime() : null);
+
+      if (lastEarnAttempt) {
+        const timeSinceLastAttempt = now - lastEarnAttempt;
+        const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+        // Check if 24 hours have passed
+        if (timeSinceLastAttempt < twentyFourHours) {
+          const timeRemaining = twentyFourHours - timeSinceLastAttempt;
+          const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
+          const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
+          throw new Error(`Please wait ${hours}h ${minutes}m before earning again`);
+        }
+
+        // Check if within 5-minute window (24h to 24h 5min)
+        if (timeSinceLastAttempt > twentyFourHours + fiveMinutes) {
+          // Window has passed, reset lastEarnAttempt to now to start new 24h cycle
+          await updateDoc(userProductRef, {
+            lastEarnAttempt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          throw new Error('You missed the 5-minute earning window. Please wait 24 hours for the next opportunity.');
+        }
+      }
+
+      // Get wallet
+      const walletRef = doc(db, 'wallets', user.id);
+      const walletDoc = await getDoc(walletRef);
+      
+      if (!walletDoc.exists()) {
+        throw new Error('Wallet not found');
+      }
+
+      const walletData = walletDoc.data();
+
+      // Update wallet - add to balance wallet and total earnings
+      await updateDoc(walletRef, {
+        balanceWallet: increment(earnAmount),
+        totalEarnings: increment(earnAmount),
+        incomeToday: increment(earnAmount),
+        updatedAt: serverTimestamp(),
+      });
+
+      // Update user product - update lastEarnAttempt and totalEarnings
+      await updateDoc(userProductRef, {
+        lastEarnAttempt: serverTimestamp(),
+        totalEarnings: increment(earnAmount),
+        updatedAt: serverTimestamp(),
+      });
+
+      // Create transaction record
+      await addDoc(collection(db, 'transactions'), {
+        userId: user.id,
+        type: 'earn',
+        amount: earnAmount,
+        status: 'completed',
+        userProductId: userProductId,
+        productName: userProduct.productName,
+        transactionId: 'EARN_' + Date.now(),
+        createdAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: {
+          amount: earnAmount,
+          message: `Successfully earned ${earnAmount}`,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to earn from product');
+    }
+  },
+};
+
+// Admin API
+export const adminAPI = {
+  // Get all members (consumers)
+  getAllMembers: async (token) => {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('role', '==', 'consumer'));
+      const querySnapshot = await getDocs(q);
+
+      const members = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      return {
+        success: true,
+        data: { members },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch members');
+    }
+  },
+
+  // Activate/Deactivate member
+  toggleMemberStatus: async (token, memberId, isActive) => {
+    try {
+      const userRef = doc(db, 'users', memberId);
+      await updateDoc(userRef, {
+        isActive,
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: { id: memberId, isActive },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update member status');
+    }
+  },
+
+  // Get all transactions
+  getAllTransactions: async (token, limit = 100) => {
+    try {
+      const transactionsRef = collection(db, 'transactions');
+      const q = query(transactionsRef);
+      const querySnapshot = await getDocs(q);
+
+      let transactions = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Sort by createdAt descending (most recent first)
+      transactions.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || 0;
+        const timeB = b.createdAt?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
+      // Limit results
+      transactions = transactions.slice(0, limit);
+
+      // Fetch user names for each transaction
+      const transactionsWithUsers = await Promise.all(
+        transactions.map(async (transaction) => {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', transaction.userId));
+            const userData = userDoc.exists() ? userDoc.data() : null;
+            return {
+              ...transaction,
+              userName: userData?.name || 'Unknown',
+              userPhone: userData?.phone || 'Unknown',
+            };
+          } catch {
+            return {
+              ...transaction,
+              userName: 'Unknown',
+              userPhone: 'Unknown',
+            };
+          }
+        })
+      );
+
+      return {
+        success: true,
+        data: { transactions: transactionsWithUsers },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch transactions');
+    }
+  },
+
+  // Get all withdrawals
+  getAllWithdrawals: async (token) => {
+    try {
+      const transactionsRef = collection(db, 'transactions');
+      const q = query(transactionsRef, where('type', '==', 'withdraw'));
+      const querySnapshot = await getDocs(q);
+
+      let withdrawals = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Sort by createdAt descending
+      withdrawals.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || 0;
+        const timeB = b.createdAt?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
+      // Fetch user names for each withdrawal
+      const withdrawalsWithUsers = await Promise.all(
+        withdrawals.map(async (withdrawal) => {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', withdrawal.userId));
+            const userData = userDoc.exists() ? userDoc.data() : null;
+            return {
+              ...withdrawal,
+              userName: userData?.name || 'Unknown',
+              userPhone: userData?.phone || 'Unknown',
+            };
+          } catch {
+            return {
+              ...withdrawal,
+              userName: 'Unknown',
+              userPhone: 'Unknown',
+            };
+          }
+        })
+      );
+
+      return {
+        success: true,
+        data: { withdrawals: withdrawalsWithUsers },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch withdrawals');
+    }
+  },
+
+  // Approve/Reject withdrawal
+  updateWithdrawalStatus: async (token, withdrawalId, status, adminNote = '') => {
+    try {
+      const transactionRef = doc(db, 'transactions', withdrawalId);
+      const transactionDoc = await getDoc(transactionRef);
+
+      if (!transactionDoc.exists()) {
+        throw new Error('Withdrawal not found');
+      }
+
+      const transactionData = transactionDoc.data();
+
+      // If rejecting, refund the amount to user's wallet and decrease totalWithdrawals
+      if (status === 'rejected' && transactionData.status === 'pending') {
+        const walletRef = doc(db, 'wallets', transactionData.userId);
+        const walletDoc = await getDoc(walletRef);
+
+        if (walletDoc.exists()) {
+          await updateDoc(walletRef, {
+            balanceWallet: increment(transactionData.amount),
+            totalWithdrawals: increment(-transactionData.amount),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
+      // If approving, ensure the withdrawal was pending
+      if (status === 'approved' && transactionData.status === 'pending') {
+        // Balance already deducted during withdrawal creation
+      }
+
+      // Update transaction status
+      await updateDoc(transactionRef, {
+        status,
+        adminNote,
+        processedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: { id: withdrawalId, status },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update withdrawal status');
+    }
+  },
+
+  // Get all pending recharge requests
+  getAllPendingRecharges: async (token) => {
+    try {
+      const transactionsRef = collection(db, 'transactions');
+      const q = query(transactionsRef, where('type', '==', 'recharge'), where('status', '==', 'pending'));
+      const querySnapshot = await getDocs(q);
+
+      let recharges = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Sort by createdAt descending
+      recharges.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || 0;
+        const timeB = b.createdAt?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
+      // Fetch user names for each recharge
+      const rechargesWithUsers = await Promise.all(
+        recharges.map(async (recharge) => {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', recharge.userId));
+            const userData = userDoc.exists() ? userDoc.data() : null;
+            return {
+              ...recharge,
+              userName: userData?.name || 'Unknown',
+              userPhone: userData?.phone || 'Unknown',
+            };
+          } catch {
+            return {
+              ...recharge,
+              userName: 'Unknown',
+              userPhone: 'Unknown',
+            };
+          }
+        })
+      );
+
+      return {
+        success: true,
+        data: { recharges: rechargesWithUsers },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch pending recharges');
+    }
+  },
+
+  // Approve/Reject recharge request
+  updateRechargeStatus: async (token, rechargeId, status, adminNote = '') => {
+    try {
+      const transactionRef = doc(db, 'transactions', rechargeId);
+      const transactionDoc = await getDoc(transactionRef);
+
+      if (!transactionDoc.exists()) {
+        throw new Error('Recharge request not found');
+      }
+
+      const transactionData = transactionDoc.data();
+
+      if (transactionData.type !== 'recharge') {
+        throw new Error('Transaction is not a recharge');
+      }
+
+      // If approving, add amount to user's rechargeWallet
+      if (status === 'approved' && transactionData.status === 'pending') {
+        const walletRef = doc(db, 'wallets', transactionData.userId);
+        const walletDoc = await getDoc(walletRef);
+
+        // Ensure amount is a number
+        const amountToAdd = typeof transactionData.amount === 'number' 
+          ? transactionData.amount 
+          : parseFloat(transactionData.amount) || 0;
+
+        if (isNaN(amountToAdd) || amountToAdd <= 0) {
+          throw new Error('Invalid recharge amount: ' + transactionData.amount);
+        }
+
+        if (walletDoc.exists()) {
+          // Use increment to ensure atomic operation
+          // Add to both rechargeWallet (for purchases) and balanceWallet (main wallet)
+          await updateDoc(walletRef, {
+            rechargeWallet: increment(amountToAdd),
+            balanceWallet: increment(amountToAdd),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          // Create wallet if it doesn't exist
+          await setDoc(walletRef, {
+            userId: transactionData.userId,
+            rechargeWallet: amountToAdd,
+            balanceWallet: amountToAdd, // Add to main wallet as well
+            totalEarnings: 0,
+            totalWithdrawals: 0,
+            incomeToday: 0,
+            incomeYesterday: 0,
+            lossToday: 0,
+            lossTotal: 0,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
+      // Update transaction status
+      await updateDoc(transactionRef, {
+        status,
+        adminNote,
+        processedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        success: true,
+        data: { id: rechargeId, status },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update recharge status');
+    }
+  },
+};
+
+// Settings API
+export const settingsAPI = {
+  // Get settings
+  getSettings: async () => {
+    try {
+      const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
+      
+      if (!settingsDoc.exists()) {
+        // Return default settings
+        return {
+          success: true,
+          data: {
+            bKashNumber: '',
+            totalSystemCurrency: 0,
+            currency: 'USD',
+            referralBonus: 200,
+            supportNumber: '',
+          },
+        };
+      }
+
+      return {
+        success: true,
+        data: settingsDoc.data(),
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch settings');
+    }
+  },
+
+  // Update settings (admin only)
+  updateSettings: async (token, settings) => {
+    try {
+      await setDoc(doc(db, 'settings', 'app'), {
+        ...settings,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      return {
+        success: true,
+        data: settings,
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update settings');
+    }
+  },
+};
+
+export default {
+  authAPI,
+  userAPI,
+  walletAPI,
+  teamAPI,
+  productAPI,
+  adminAPI,
+  settingsAPI,
+};
