@@ -626,17 +626,19 @@ export const productAPI = {
           { name: 'Product 2', price: 200 },
         ];
 
+        const createdProducts = [];
         for (const product of defaultProducts) {
-          await addDoc(productsRef, {
+          const newProductRef = await addDoc(productsRef, {
             ...product,
             createdAt: serverTimestamp(),
           });
+          createdProducts.push({ id: newProductRef.id, ...product });
         }
 
         return {
           success: true,
           data: {
-            products: defaultProducts.map((p, idx) => ({ id: `temp_${idx}`, ...p })),
+            products: createdProducts,
           },
         };
       }
@@ -665,6 +667,7 @@ export const productAPI = {
         imageUrl: productData.imageUrl || '',
         validateDate: productData.validateDate || null,
         earnAmount: productData.earnAmount || 0,
+        totalEarning: productData.totalEarning || 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -682,7 +685,19 @@ export const productAPI = {
 
   updateProduct: async (token, productId, productData) => {
     try {
+      // Check if productId is a temporary ID (shouldn't happen after fix, but handle gracefully)
+      if (productId && productId.startsWith('temp_')) {
+        throw new Error('Invalid product ID. Please refresh the page and try again.');
+      }
+
       const productRef = doc(db, 'products', productId);
+      
+      // Check if document exists before updating
+      const productSnap = await getDoc(productRef);
+      if (!productSnap.exists()) {
+        throw new Error(`Product with ID "${productId}" does not exist. Please refresh the page and try again.`);
+      }
+
       await updateDoc(productRef, {
         ...productData,
         updatedAt: serverTimestamp(),

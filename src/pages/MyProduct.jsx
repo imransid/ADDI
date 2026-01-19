@@ -93,10 +93,18 @@ const MyProduct = () => {
                 canEarn: true,
               };
             } else {
-              // Window passed, reset needed
+              // Window passed, calculate time until next 24-hour cycle
+              const nextCycleStart = lastEarnAttempt + (twentyFourHours * 2);
+              const timeUntilNextCycle = nextCycleStart - now;
+              const hours = Math.floor(timeUntilNextCycle / (60 * 60 * 1000));
+              const minutes = Math.floor((timeUntilNextCycle % (60 * 60 * 1000)) / (60 * 1000));
+              const seconds = Math.floor((timeUntilNextCycle % (60 * 1000)) / 1000);
               newEarnTimers[product.id] = {
                 status: 'missed',
                 canEarn: false,
+                hours,
+                minutes,
+                seconds,
               };
             }
           } else {
@@ -406,7 +414,34 @@ const MyProduct = () => {
                             <span className="text-sm font-bold text-green-600">
                               {formatCurrency(product.totalEarnings || 0, settings.currency)}
                             </span>
+                            {product.totalEarning > 0 && (
+                              <span className="text-xs text-gray-400">
+                                / {formatCurrency(product.totalEarning, settings.currency)} max
+                              </span>
+                            )}
                           </div>
+                          {product.totalEarning > 0 && product.totalEarnings >= product.totalEarning && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs font-semibold text-orange-600">
+                                ⚠️ Maximum earning limit reached
+                              </span>
+                            </div>
+                          )}
+                          {product.totalEarning > 0 && product.totalEarnings < product.totalEarning && (
+                            <div className="mt-1">
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
+                                  style={{ 
+                                    width: `${Math.min((product.totalEarnings / product.totalEarning) * 100, 100)}%` 
+                                  }}
+                                ></div>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {((product.totalEarnings / product.totalEarning) * 100).toFixed(1)}% of maximum earned
+                              </div>
+                            </div>
+                          )}
 
                           {/* Validation Date */}
                           {product.validateDate && (
@@ -428,37 +463,128 @@ const MyProduct = () => {
                             </div>
                           )}
 
-                          {/* Earning Opportunity Status */}
+                          {/* Total Earning (Maximum) */}
+                          {product.totalEarning > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">Max Total Earning:</span>
+                              <span className="text-sm font-bold text-purple-600">
+                                {formatCurrency(product.totalEarning, settings.currency)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Earning Opportunity Status - Prominent Display */}
                           {!isExpired && product.earnAmount > 0 && earnTimers[product.id] && (
-                            <div className="mt-2 p-2 rounded-lg bg-gray-50 border border-gray-200">
+                            <div className="mt-3 p-3 rounded-xl border-2 shadow-md" style={{
+                              backgroundColor: earnTimers[product.id].status === 'available' || earnTimers[product.id].status === 'window' 
+                                ? 'rgba(34, 197, 94, 0.1)' 
+                                : earnTimers[product.id].status === 'missed'
+                                ? 'rgba(239, 68, 68, 0.1)'
+                                : 'rgba(59, 130, 246, 0.1)',
+                              borderColor: earnTimers[product.id].status === 'available' || earnTimers[product.id].status === 'window'
+                                ? 'rgb(34, 197, 94)'
+                                : earnTimers[product.id].status === 'missed'
+                                ? 'rgb(239, 68, 68)'
+                                : 'rgb(59, 130, 246)'
+                            }}>
                               {earnTimers[product.id].status === 'available' && (
-                                <div className="text-xs text-green-600 font-semibold">
-                                  ✓ Earning available now!
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-shrink-0 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="text-sm font-bold text-green-700">
+                                      Earning Available Now!
+                                    </div>
+                                    <div className="text-xs text-green-600 mt-0.5">
+                                      You can earn {formatCurrency(product.earnAmount, settings.currency)} right away
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                               {earnTimers[product.id].status === 'window' && (
-                                <div className="space-y-1">
-                                  <div className="text-xs text-orange-600 font-semibold">
-                                    ⏰ 5-minute window open!
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                                      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="text-sm font-bold text-orange-700">
+                                        ⏰ 5-Minute Window Open!
+                                      </div>
+                                      <div className="text-xs text-orange-600 mt-0.5">
+                                        Act fast - window closing soon
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="text-xs text-gray-600">
-                                    Time left: {formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
+                                  <div className="bg-white/50 rounded-lg p-2 text-center">
+                                    <div className="text-xs text-gray-600 mb-1">Time Remaining:</div>
+                                    <div className="text-lg font-bold text-orange-700">
+                                      {formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
+                                    </div>
                                   </div>
                                 </div>
                               )}
                               {earnTimers[product.id].status === 'cooldown' && (
-                                <div className="space-y-1">
-                                  <div className="text-xs text-gray-600">
-                                    Next opportunity in:
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="text-sm font-bold text-blue-700">
+                                        Next Earning Opportunity
+                                      </div>
+                                      <div className="text-xs text-blue-600 mt-0.5">
+                                        You can earn {formatCurrency(product.earnAmount, settings.currency)} in:
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="text-xs font-semibold text-gray-900">
-                                    {formatTime(earnTimers[product.id].hours)}:{formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
+                                  <div className="bg-white/50 rounded-lg p-3 text-center">
+                                    <div className="text-xs text-gray-600 mb-1">Time Until Next Earn:</div>
+                                    <div className="text-2xl font-bold text-blue-700 tracking-wider">
+                                      {formatTime(earnTimers[product.id].hours)}:{formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      {earnTimers[product.id].hours > 0 && `${earnTimers[product.id].hours} hour${earnTimers[product.id].hours > 1 ? 's' : ''}, `}
+                                      {earnTimers[product.id].minutes} minute{earnTimers[product.id].minutes !== 1 ? 's' : ''}, {earnTimers[product.id].seconds} second{earnTimers[product.id].seconds !== 1 ? 's' : ''}
+                                    </div>
                                   </div>
                                 </div>
                               )}
                               {earnTimers[product.id].status === 'missed' && (
-                                <div className="text-xs text-red-600 font-semibold">
-                                  ⚠️ Window missed. Wait 24h for next opportunity.
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-shrink-0 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                                      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                      </svg>
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="text-sm font-bold text-red-700">
+                                        ⚠️ Window Missed
+                                      </div>
+                                      <div className="text-xs text-red-600 mt-0.5">
+                                        Next earning opportunity in:
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="bg-white/50 rounded-lg p-3 text-center">
+                                    <div className="text-xs text-gray-600 mb-1">Time Until Next Earn:</div>
+                                    <div className="text-2xl font-bold text-red-700 tracking-wider">
+                                      {formatTime(earnTimers[product.id].hours)}:{formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      {earnTimers[product.id].hours > 0 && `${earnTimers[product.id].hours} hour${earnTimers[product.id].hours > 1 ? 's' : ''}, `}
+                                      {earnTimers[product.id].minutes} minute{earnTimers[product.id].minutes !== 1 ? 's' : ''}, {earnTimers[product.id].seconds} second{earnTimers[product.id].seconds !== 1 ? 's' : ''}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>

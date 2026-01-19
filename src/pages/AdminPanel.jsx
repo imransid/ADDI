@@ -24,7 +24,7 @@ const AdminPanel = () => {
   const [products, setProducts] = useState([]);
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [productForm, setProductForm] = useState({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "" });
+  const [productForm, setProductForm] = useState({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
   
   // Transactions
   const [transactions, setTransactions] = useState([]);
@@ -217,6 +217,7 @@ const AdminPanel = () => {
           imageUrl: productForm.imageUrl,
           validateDate: productForm.validateDate ? new Date(productForm.validateDate) : null,
           earnAmount: productForm.earnAmount ? parseFloat(productForm.earnAmount) : 0,
+          totalEarning: productForm.totalEarning ? parseFloat(productForm.totalEarning) : 0,
         });
         alert("Product updated successfully");
       } else {
@@ -227,12 +228,13 @@ const AdminPanel = () => {
           imageUrl: productForm.imageUrl,
           validateDate: productForm.validateDate ? new Date(productForm.validateDate) : null,
           earnAmount: productForm.earnAmount ? parseFloat(productForm.earnAmount) : 0,
+          totalEarning: productForm.totalEarning ? parseFloat(productForm.totalEarning) : 0,
         });
         alert("Product added successfully");
       }
       setShowProductModal(false);
       setEditingProduct(null);
-      setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "" });
+      setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
       await loadProducts();
     } catch (error) {
       alert("Failed to save product: " + error.message);
@@ -553,7 +555,7 @@ const AdminPanel = () => {
                   <button
                     onClick={() => {
                       setEditingProduct(null);
-                      setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "" });
+                      setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
                       setShowProductModal(true);
                     }}
                     className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-sm"
@@ -592,6 +594,7 @@ const AdminPanel = () => {
                             imageUrl: product.imageUrl || "",
                             validateDate: validateDateStr,
                             earnAmount: (product.earnAmount || 0).toString(),
+                            totalEarning: (product.totalEarning || 0).toString(),
                           });
                           setShowProductModal(true);
                         }}
@@ -1106,6 +1109,20 @@ const AdminPanel = () => {
                 />
                 <p className="text-xs text-gray-400 mt-1">Amount user can earn daily from this product</p>
               </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Total Earning (Maximum)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={productForm.totalEarning}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, totalEarning: e.target.value })
+                  }
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                />
+                <p className="text-xs text-gray-400 mt-1">Maximum total amount user can earn from this product (0 = unlimited)</p>
+              </div>
               <div className="flex gap-2">
                 <button
                   type="submit"
@@ -1119,7 +1136,7 @@ const AdminPanel = () => {
                   onClick={() => {
                     setShowProductModal(false);
                     setEditingProduct(null);
-                    setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "" });
+                    setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
                   }}
                   className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
                 >
