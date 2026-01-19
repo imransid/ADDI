@@ -17,7 +17,6 @@ import Withdraw from "./pages/Withdraw";
 import MyProduct from "./pages/MyProduct";
 import Invitation from "./pages/Invitation";
 import AppDownload from "./pages/AppDownload";
-import RedeemBonus from "./pages/RedeemBonus";
 import MyTeams from "./pages/MyTeams";
 import Online from "./pages/Online";
 import Login from "./pages/Login";
