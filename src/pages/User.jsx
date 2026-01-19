@@ -9,7 +9,7 @@ import { fetchWallet } from '../store/walletSlice';
 import { fetchTeam } from '../store/teamSlice';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency } from '../utils/currency';
-import { productAPI } from '../services/api';
+import { productAPI, vipAPI } from '../services/api';
 
 /**
  * User (Me) page. Displays a summary of the user's wallets, earnings,
@@ -32,6 +32,11 @@ const User = () => {
   // Check if user has purchased any product
   const [hasPurchasedProduct, setHasPurchasedProduct] = useState(false);
   const [checkingPurchase, setCheckingPurchase] = useState(false);
+  
+  // VIP status
+  const [vipStatus, setVipStatus] = useState(null);
+  const [loadingVIP, setLoadingVIP] = useState(false);
+  const [claimingRewards, setClaimingRewards] = useState(false);
 
   // Fetch account status directly from database
   const fetchAccountStatus = useCallback(async () => {
@@ -84,6 +89,68 @@ const User = () => {
     }
   }, [auth.isAuthenticated, auth.user?.id]);
 
+  // Fetch VIP status
+  const fetchVIPStatus = useCallback(async () => {
+    if (!auth.isAuthenticated || !auth.user?.id) {
+      return;
+    }
+
+    try {
+      setLoadingVIP(true);
+      const response = await vipAPI.getVIPStatus(null);
+      if (response.success) {
+        setVipStatus(response.data);
+        // Auto-check and claim rewards when viewing page
+        try {
+          await vipAPI.claimVIPRewards(null);
+          // Refresh wallet after claiming rewards
+          dispatch(fetchWallet());
+        } catch (rewardError) {
+          // Silently fail - rewards might already be claimed
+          console.log('Reward claim check:', rewardError.message);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch VIP status:', error);
+    } finally {
+      setLoadingVIP(false);
+    }
+  }, [auth.isAuthenticated, auth.user?.id, dispatch]);
+
+  // Manually claim VIP rewards
+  const handleClaimVIPRewards = async () => {
+    if (!auth.isAuthenticated || !auth.user?.id) {
+      return;
+    }
+
+    try {
+      setClaimingRewards(true);
+      const response = await vipAPI.claimVIPRewards(null);
+      if (response.success) {
+        const { weekly, monthly } = response.data;
+        let message = '';
+        if (weekly?.success) {
+          message += `Weekly reward: ${formatCurrency(weekly.amount, settings.currency)}\n`;
+        }
+        if (monthly?.success) {
+          message += `Monthly reward: ${formatCurrency(monthly.amount, settings.currency)}\n`;
+        }
+        if (message) {
+          alert(message.trim() || 'Rewards claimed successfully!');
+          // Refresh wallet and VIP status
+          dispatch(fetchWallet());
+          fetchVIPStatus();
+        } else {
+          alert('No rewards available at this time.');
+        }
+      }
+    } catch (error) {
+      alert('Failed to claim rewards: ' + error.message);
+    } finally {
+      setClaimingRewards(false);
+    }
+  };
+
   // Fetch data on component mount and when page becomes visible
   useEffect(() => {
     if (auth.isAuthenticated) {
@@ -97,8 +164,9 @@ const User = () => {
       dispatch(fetchTeam());
       fetchAccountStatus();
       checkUserPurchases();
+      fetchVIPStatus();
     }
-  }, [auth.isAuthenticated, dispatch, fetchAccountStatus, checkUserPurchases]);
+  }, [auth.isAuthenticated, dispatch, fetchAccountStatus, checkUserPurchases, fetchVIPStatus]);
 
   // Debug: Log wallet state
   useEffect(() => {
@@ -282,6 +350,125 @@ const User = () => {
       )}
 
       <div className="px-4 pt-6 space-y-6">
+        {/* VIP Status Card - Premium Display */}
+        {vipStatus && vipStatus.vipLevel > 0 && (
+          <div className="bg-gradient-to-br from-purple-600 via-pink-600 to-orange-600 rounded-2xl p-6 shadow-2xl text-white transform hover:scale-[1.02] transition-transform duration-300 border-2 border-yellow-300 relative overflow-hidden">
+            {/* Animated background pattern */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="absolute top-4 left-4 w-16 h-16 border-3 border-white rounded-full animate-pulse"></div>
+              <div className="absolute bottom-4 right-4 w-12 h-12 border-3 border-white rounded-full animate-pulse delay-500"></div>
+            </div>
+            
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex-1">
+                  <div className="text-sm opacity-90 mb-2 flex items-center gap-2">
+                    <span className="text-3xl">👑</span>
+                    <span className="font-bold text-lg">VIP Status</span>
+                  </div>
+                  <div className="text-4xl font-black mb-2">
+                    {vipStatus.vipLevelName}
+                  </div>
+                  <div className="text-sm text-white/90 mb-3">
+                    {vipStatus.referralCount} Referrals • {vipStatus.referralCount >= 20 ? 'VIP 2 Unlocked!' : vipStatus.referralCount >= 5 ? 'VIP 1 Unlocked!' : `${20 - vipStatus.referralCount} more for VIP 2`}
+                  </div>
+                </div>
+                <div className="text-6xl opacity-30">
+                  {vipStatus.vipLevel === 2 ? '💎' : '⭐'}
+                </div>
+              </div>
+
+              {/* VIP Benefits */}
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-4 border border-white/30">
+                <div className="text-xs font-bold mb-2 text-yellow-200">VIP Benefits</div>
+                <div className="space-y-2 text-sm">
+                  {vipStatus.weeklyReward > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span>💰 Weekly Reward:</span>
+                      <span className="font-bold">{formatCurrency(vipStatus.weeklyReward, settings.currency)}</span>
+                    </div>
+                  )}
+                  {vipStatus.monthlyReward > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span>💎 Monthly Reward:</span>
+                      <span className="font-bold">{formatCurrency(vipStatus.monthlyReward, settings.currency)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Next Reward Info */}
+              {(vipStatus.nextWeeklyReward || vipStatus.nextMonthlyReward) && (
+                <div className="text-xs text-white/80 mb-3">
+                  {vipStatus.nextWeeklyReward && (
+                    <div>Next Weekly: {new Date(vipStatus.nextWeeklyReward).toLocaleDateString()}</div>
+                  )}
+                  {vipStatus.nextMonthlyReward && (
+                    <div>Next Monthly: {new Date(vipStatus.nextMonthlyReward).toLocaleDateString()}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Claim Rewards Button */}
+              <button
+                onClick={handleClaimVIPRewards}
+                disabled={claimingRewards}
+                className="w-full bg-white/30 hover:bg-white/40 backdrop-blur-sm text-white font-bold py-3 rounded-xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {claimingRewards ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Claiming...
+                  </>
+                ) : (
+                  <>
+                    <span>🎁</span>
+                    Claim VIP Rewards
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* VIP Progress Card (if not VIP yet) */}
+        {vipStatus && vipStatus.vipLevel === 0 && (
+          <div className="bg-gradient-to-br from-gray-700 to-gray-900 rounded-2xl p-6 shadow-xl text-white">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex-1">
+                <div className="text-sm opacity-90 mb-2 flex items-center gap-2">
+                  <span className="text-2xl">📈</span>
+                  <span className="font-semibold">VIP Progress</span>
+                </div>
+                <div className="text-2xl font-bold mb-2">
+                  Regular Member
+                </div>
+                <div className="text-sm text-white/80 mb-4">
+                  {vipStatus.referralCount} / 5 referrals for VIP 1
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="w-full bg-white/20 rounded-full h-3 mb-2">
+                  <div 
+                    className="bg-gradient-to-r from-purple-500 to-pink-500 h-3 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min((vipStatus.referralCount / 5) * 100, 100)}%` }}
+                  ></div>
+                </div>
+                
+                <div className="text-xs text-white/60">
+                  {5 - vipStatus.referralCount} more referrals needed for VIP 1
+                </div>
+              </div>
+              <div className="text-5xl opacity-30">
+                🎯
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Account Status Card */}
         <div className={`rounded-2xl p-6 shadow-xl text-white transform hover:scale-[1.02] transition-transform duration-300 ${
           accountStatus 

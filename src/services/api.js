@@ -168,7 +168,7 @@ export const authAPI = {
         nid: nid || null,
         passport: passport || null,
         role: 'consumer',
-        isActive: false, // Consumers need activation by admin
+        isActive: true, // Consumers are automatically approved on sign up
         referralCode: newReferralCode,
         referredBy: referrerId || null,
         totalReferrals: 0,
@@ -254,6 +254,38 @@ export const authAPI = {
             transactionId: 'REF_' + Date.now() + '_' + referrerId,
             createdAt: serverTimestamp(),
           });
+
+          // Check and update VIP level for referrer
+          try {
+            const { updateVIPLevel } = await import('./vipService');
+            const updatedReferrerDoc = await getDoc(referrerRef);
+            if (updatedReferrerDoc.exists()) {
+              const updatedReferrerData = updatedReferrerDoc.data();
+              const newReferralCount = updatedReferrerData.totalReferrals || 0;
+              
+              // Calculate new VIP level
+              let newVIPLevel = 0; // NONE
+              if (newReferralCount >= 20) {
+                newVIPLevel = 2; // VIP 2
+              } else if (newReferralCount >= 5) {
+                newVIPLevel = 1; // VIP 1
+              }
+
+              const currentVIPLevel = updatedReferrerData.vipLevel || 0;
+              
+              // Update VIP level if changed
+              if (newVIPLevel !== currentVIPLevel) {
+                await updateDoc(referrerRef, {
+                  vipLevel: newVIPLevel,
+                  vipLevelUpdatedAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          } catch (vipError) {
+            console.error('Error updating VIP level:', vipError);
+            // Don't fail registration if VIP update fails
+          }
         }
       }
 
@@ -268,7 +300,7 @@ export const authAPI = {
             phone,
             name,
             role: 'consumer',
-            isActive: false,
+            isActive: true, // Consumers are automatically activated on sign up
           },
           referralBonus: initialBalance > 0 ? initialBalance : 0,
         },
@@ -1444,6 +1476,97 @@ export const adminAPI = {
   },
 };
 
+// VIP API
+export const vipAPI = {
+  // Get VIP status and rewards info
+  getVIPStatus: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const userDoc = await getDoc(doc(db, 'users', user.id));
+
+      if (!userDoc.exists()) {
+        throw new Error('User not found');
+      }
+
+      const userData = userDoc.data();
+      const referralCount = userData.totalReferrals || 0;
+      const vipLevel = userData.vipLevel || 0;
+      const lastWeeklyReward = userData.lastWeeklyReward;
+      const lastMonthlyReward = userData.lastMonthlyReward;
+
+      // Calculate VIP level based on current referrals
+      let calculatedVIPLevel = 0;
+      if (referralCount >= 20) {
+        calculatedVIPLevel = 2; // VIP 2
+      } else if (referralCount >= 5) {
+        calculatedVIPLevel = 1; // VIP 1
+      }
+
+      // Get VIP rewards info
+      const { VIP_REWARDS, getVIPLevelName } = await import('./vipService');
+      const weeklyReward = VIP_REWARDS[calculatedVIPLevel]?.weekly || 0;
+      const monthlyReward = VIP_REWARDS[calculatedVIPLevel]?.monthly || 0;
+
+      // Calculate next reward dates
+      let nextWeeklyReward = null;
+      let nextMonthlyReward = null;
+
+      if (lastWeeklyReward && calculatedVIPLevel > 0) {
+        const lastRewardDate = lastWeeklyReward.toMillis
+          ? new Date(lastWeeklyReward.toMillis())
+          : new Date(lastWeeklyReward);
+        nextWeeklyReward = new Date(lastRewardDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+      }
+
+      if (lastMonthlyReward && calculatedVIPLevel === 2) {
+        const lastRewardDate = lastMonthlyReward.toMillis
+          ? new Date(lastMonthlyReward.toMillis())
+          : new Date(lastMonthlyReward);
+        nextMonthlyReward = new Date(lastRewardDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+      }
+
+      return {
+        success: true,
+        data: {
+          vipLevel: calculatedVIPLevel,
+          vipLevelName: getVIPLevelName(calculatedVIPLevel),
+          referralCount,
+          weeklyReward,
+          monthlyReward,
+          lastWeeklyReward: lastWeeklyReward ? (lastWeeklyReward.toMillis ? new Date(lastWeeklyReward.toMillis()) : new Date(lastWeeklyReward)) : null,
+          lastMonthlyReward: lastMonthlyReward ? (lastMonthlyReward.toMillis ? new Date(lastMonthlyReward.toMillis()) : new Date(lastMonthlyReward)) : null,
+          nextWeeklyReward,
+          nextMonthlyReward,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch VIP status');
+    }
+  },
+
+  // Check and claim VIP rewards
+  claimVIPRewards: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const { checkAndDistributeVIPRewards } = await import('./vipService');
+      const results = await checkAndDistributeVIPRewards(user.id);
+
+      return {
+        success: true,
+        data: results,
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to claim VIP rewards');
+    }
+  },
+};
+
 // Settings API
 export const settingsAPI = {
   // Get settings
@@ -1500,4 +1623,5 @@ export default {
   productAPI,
   adminAPI,
   settingsAPI,
+  vipAPI,
 };

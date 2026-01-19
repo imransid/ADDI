@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { updateUserStatus } from '../store/authSlice';
 
 /**
  * Protected Route Component
@@ -9,10 +12,51 @@ import { useSelector } from 'react-redux';
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, user } = useSelector((state) => state.auth);
   const location = useLocation();
+  const dispatch = useDispatch();
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  // Verify account status from database if user appears inactive
+  useEffect(() => {
+    const verifyAccountStatus = async () => {
+      if (isAuthenticated && user?.id && user?.role !== 'admin' && !user?.isActive) {
+        try {
+          setCheckingStatus(true);
+          const userDoc = await getDoc(doc(db, 'users', user.id));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const isActive = userData.isActive !== undefined ? userData.isActive : false;
+            
+            // Update Redux state if database shows user is active
+            if (isActive && !user.isActive) {
+              dispatch(updateUserStatus({ isActive: true }));
+            }
+          }
+        } catch (error) {
+          console.error('Error verifying account status:', error);
+        } finally {
+          setCheckingStatus(false);
+        }
+      }
+    };
+
+    verifyAccountStatus();
+  }, [isAuthenticated, user, dispatch]);
 
   if (!isAuthenticated) {
     // Redirect to login page with return url
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Show loading while checking status
+  if (checkingStatus) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-600">Verifying account status...</p>
+        </div>
+      </div>
+    );
   }
 
   // Check if user is activated (members must be activated, admins are always activated)
