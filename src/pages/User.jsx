@@ -107,7 +107,6 @@ const User = () => {
           dispatch(fetchWallet());
         } catch (rewardError) {
           // Silently fail - rewards might already be claimed
-          console.log('Reward claim check:', rewardError.message);
         }
       }
     } catch (error) {
@@ -156,7 +155,6 @@ const User = () => {
     if (auth.isAuthenticated) {
       dispatch(fetchUserProfile());
       dispatch(fetchWallet()).then((result) => {
-        console.log('Wallet fetch result:', result);
         if (result.error) {
           console.error('Wallet fetch error:', result.error);
         }
@@ -169,11 +167,6 @@ const User = () => {
   }, [auth.isAuthenticated, dispatch, fetchAccountStatus, checkUserPurchases, fetchVIPStatus]);
 
   // Debug: Log wallet state
-  useEffect(() => {
-    console.log('Wallet state:', wallet);
-    console.log('Wallet loading:', wallet.loading);
-    console.log('Wallet error:', wallet.error);
-  }, [wallet]);
 
   // Refresh wallet and account status when page becomes visible (user returns to tab)
   useEffect(() => {

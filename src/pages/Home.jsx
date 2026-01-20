@@ -44,7 +44,6 @@ const Home = () => {
           await vipAPI.claimVIPRewards(null);
         } catch (rewardError) {
           // Silently fail - rewards might already be claimed
-          console.log('Reward claim check:', rewardError.message);
         }
       }
     } catch (error) {

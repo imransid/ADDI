@@ -191,8 +191,6 @@ const MyProduct = () => {
   const currentProducts = products[tab] || [];
 
 
-  console.log(currentProducts);
-
   // Calculate today's earnings
   const todayEarnings = wallet.incomeToday > 0 ? wallet.incomeToday : 0;
   // Calculate total earnings

@@ -120,7 +120,6 @@ const walletSlice = createSlice({
       })
       .addCase(fetchWallet.fulfilled, (state, action) => {
         state.loading = false;
-        console.log('Wallet slice - received payload:', action.payload);
         // Update state with payload values
         if (action.payload) {
           state.rechargeWallet = action.payload.rechargeWallet ?? 0;

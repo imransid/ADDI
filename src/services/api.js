@@ -456,9 +456,7 @@ export const walletAPI = {
 
       const walletData = walletDoc.data();
       
-      // Debug: Log raw wallet data
-      console.log('Raw wallet data from Firebase:', walletData);
-      console.log('User ID:', user.id);
+    
 
       // Ensure all values are numbers, handle null/undefined
       const rechargeWallet = walletData.rechargeWallet != null ? Number(walletData.rechargeWallet) : 0;
@@ -484,7 +482,6 @@ export const walletAPI = {
         },
       };
 
-      console.log('Processed wallet response:', walletResponse);
       return walletResponse;
     } catch (error) {
       throw new Error(error.message || 'Failed to fetch wallet');

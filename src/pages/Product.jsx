@@ -47,8 +47,6 @@ const Product = () => {
       const response = await productAPI.getProducts();
       if (response.success) {
 
-        console.log(response.data.products);
-
         // Filter out deleted products
         const activeProducts = response.data.products.filter(p => !p.deleted);
         setProducts(activeProducts);
@@ -223,12 +221,37 @@ const Product = () => {
                     {/* Premium Price Display */}
                     <div className="mb-4">
                       <div className="flex items-baseline gap-1">
-                        <span className="text-xs text-gray-500">{getCurrencySymbol(settings.currency)}</span>
+                        <span className="text-2xl text-gray-500">Price: {getCurrencySymbol(settings.currency)}</span>
                         <span className="text-2xl font-bold text-primary">
                           {formatCurrency(product.price || 0, settings.currency).replace(getCurrencySymbol(settings.currency), '')}
                         </span>
                       </div>
                     </div>
+
+                    {product.earnAmount > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-2xl text-gray-500">Daily Earn: {getCurrencySymbol(settings.currency)}</span>
+                          <span className="text-2xl font-bold text-primary">
+                            {formatCurrency(product.earnAmount || 0, settings.currency).replace(getCurrencySymbol(settings.currency), '')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+
+                    {
+                      product.totalEarning > 0 && (
+                        <div className="mb-4">
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl text-gray-500">Total Earning: {getCurrencySymbol(settings.currency)}</span>
+                            <span className="text-2xl font-bold text-primary">
+                              {formatCurrency(product.totalEarning || 0, settings.currency).replace(getCurrencySymbol(settings.currency), '')}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
                   </div>
 
                   {/* Premium Purchase Button */}
