@@ -15,9 +15,15 @@ const Online = () => {
     return phone.replace(/[^\d+]/g, '');
   };
 
+  // Default customer support number
+  const DEFAULT_SUPPORT_NUMBER = '+601121222669';
+  
+  // Get support number (use default if not set in DB)
+  const supportNumber = settings.supportNumber || DEFAULT_SUPPORT_NUMBER;
+
   // Open WhatsApp with support number
   const handleWhatsAppClick = () => {
-    const phoneNumber = formatPhoneForWhatsApp(settings.supportNumber);
+    const phoneNumber = formatPhoneForWhatsApp(supportNumber);
     if (!phoneNumber) {
       alert('Support number is not configured. Please contact admin.');
       return;
@@ -115,11 +121,11 @@ const Online = () => {
             <div className="flex items-center justify-center py-4">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
             </div>
-          ) : settings.supportNumber ? (
+          ) : (
             <>
               <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-4">
                 <p className="text-sm text-white/80 mb-1">Support Number</p>
-                <p className="text-xl font-bold">{settings.supportNumber}</p>
+                <p className="text-xl font-bold">{supportNumber}</p>
               </div>
               <button
                 onClick={handleWhatsAppClick}
@@ -136,12 +142,6 @@ const Online = () => {
                 <span>Open WhatsApp</span>
               </button>
             </>
-          ) : (
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 text-center">
-              <p className="text-white/90">
-                Support number is not configured yet. Please contact administrator.
-              </p>
-            </div>
           )}
         </div>
 

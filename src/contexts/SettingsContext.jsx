@@ -3,6 +3,9 @@ import { settingsAPI } from '../services/api';
 
 const SettingsContext = createContext();
 
+// Default customer support number
+const DEFAULT_SUPPORT_NUMBER = '+601121222669';
+
 export const useSettings = () => {
   const context = useContext(SettingsContext);
   if (!context) {
@@ -14,10 +17,11 @@ export const useSettings = () => {
 export const SettingsProvider = ({ children }) => {
   const [settings, setSettings] = useState({ 
     bKashNumber: '', 
+    bikashQRCodeId: '',
     totalSystemCurrency: 0, 
     currency: 'USD',
     referralBonus: 200,
-    supportNumber: ''
+    supportNumber: DEFAULT_SUPPORT_NUMBER
   });
   const [loading, setLoading] = useState(true);
 
@@ -28,10 +32,11 @@ export const SettingsProvider = ({ children }) => {
       if (response.success) {
         setSettings({
           bKashNumber: response.data.bKashNumber || '',
+          bikashQRCodeId: response.data.bikashQRCodeId || '',
           totalSystemCurrency: response.data.totalSystemCurrency || 0,
           currency: response.data.currency || 'USD',
           referralBonus: response.data.referralBonus || 200,
-          supportNumber: response.data.supportNumber || '',
+          supportNumber: response.data.supportNumber || DEFAULT_SUPPORT_NUMBER,
         });
       }
     } catch (error) {
@@ -39,10 +44,11 @@ export const SettingsProvider = ({ children }) => {
       // Use defaults on error
       setSettings({ 
         bKashNumber: '', 
+        bikashQRCodeId: '',
         totalSystemCurrency: 0, 
         currency: 'USD',
         referralBonus: 200,
-        supportNumber: ''
+        supportNumber: DEFAULT_SUPPORT_NUMBER
       });
     } finally {
       setLoading(false);

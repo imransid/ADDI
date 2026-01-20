@@ -3,9 +3,79 @@ import { useDispatch, useSelector } from 'react-redux';
 import { rechargeWallet } from '../store/walletSlice';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { walletAPI, settingsAPI } from '../services/api';
+import { walletAPI } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency, getCurrencySymbol } from '../utils/currency';
+
+// Component to display default Bikash QR code image
+const DefaultBikashQR = () => {
+  const [imageError, setImageError] = useState(false);
+  const [imageSrc, setImageSrc] = useState(null);
+
+  useEffect(() => {
+    // Try different image formats and paths
+    const imagePaths = [
+      '/assets/default-bikash-qr.png',
+      '/assets/default-bikash-qr.jpg',
+      '/assets/default-bikash-qr.jpeg',
+      '/assets/default-bikash-qr.webp',
+    ];
+
+    let currentIndex = 0;
+    const tryNextImage = () => {
+      if (currentIndex >= imagePaths.length) {
+        setImageError(true);
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        setImageSrc(imagePaths[currentIndex]);
+        setImageError(false);
+      };
+      img.onerror = () => {
+        currentIndex++;
+        tryNextImage();
+      };
+      img.src = imagePaths[currentIndex];
+    };
+
+    tryNextImage();
+  }, []);
+
+  if (imageError || !imageSrc) {
+    return (
+      <div className="w-[220px] h-[220px] flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-12 w-12 mb-2"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
+          />
+        </svg>
+        <p className="text-xs text-center px-2">Default QR code image not found</p>
+        <p className="text-xs text-center px-2 mt-1 text-gray-300">Please add image to /public/assets/</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-[220px] h-[220px] flex items-center justify-center bg-white">
+      <img 
+        src={imageSrc} 
+        alt="Default Bikash QR Code"
+        className="w-full h-full object-contain"
+      />
+    </div>
+  );
+};
 
 /**
  * Recharge page. Allows the user to select an amount and shows QR code for bKash payment.
@@ -16,10 +86,9 @@ const Recharge = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.wallet);
-  const { settings } = useSettings();
+  const { settings, loading: settingsLoading } = useSettings();
   const [amount, setAmount] = useState('60');
   const [showQRModal, setShowQRModal] = useState(false);
-  const [bKashNumber, setBKashNumber] = useState('');
   const [proofImageUrl, setProofImageUrl] = useState('');
   const [proofImageFile, setProofImageFile] = useState(null);
   const [proofImagePreview, setProofImagePreview] = useState('');
@@ -28,20 +97,10 @@ const Recharge = () => {
   const GOOGLE_DRIVE_FOLDER_ID = '1ErJTfAu21KXcqwRvFSGun79D_t-b0SyY';
   const GOOGLE_DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${GOOGLE_DRIVE_FOLDER_ID}`;
   
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    try {
-      const response = await settingsAPI.getSettings();
-      if (response.success && response.data.bKashNumber) {
-        setBKashNumber(response.data.bKashNumber);
-      }
-    } catch (err) {
-      console.error('Failed to load settings:', err);
-    }
-  };
+  // Get bikashQRCodeId and bKashNumber from settings context
+  // Always use bikashQRCodeId for QR code generation (not bKashNumber)
+  const bikashQRCodeId = settings?.bikashQRCodeId || '';
+  const bKashNumber = settings?.bKashNumber || '';
 
   const handleShowQR = async (e) => {
     e.preventDefault();
@@ -51,11 +110,7 @@ const Recharge = () => {
       return;
     }
 
-    if (!bKashNumber) {
-      alert('bKash number is not configured. Please contact admin.');
-      return;
-    }
-
+    // Allow showing QR modal even if bikashQRCodeId is not set (will show default image)
     setShowQRModal(true);
   };
 
@@ -272,7 +327,7 @@ const Recharge = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading || !bKashNumber}
+              disabled={loading}
               className="w-full py-4 bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-green-500/50 hover:shadow-xl hover:shadow-green-500/60 transform hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
             >
               {loading ? (
@@ -391,7 +446,11 @@ const Recharge = () => {
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 mb-6 border-2 border-green-100">
               <div className="flex flex-col items-center">
                 <div className="bg-white p-5 rounded-2xl shadow-lg mb-4 border-4 border-green-200">
-                  <QRCodeSVG value={bKashNumber} size={220} />
+                  {bikashQRCodeId ? (
+                    <QRCodeSVG value={bikashQRCodeId} size={220} />
+                  ) : (
+                    <DefaultBikashQR />
+                  )}
                 </div>
                 <div className="text-center space-y-2">
                   <div className="bg-white/80 backdrop-blur-sm rounded-xl px-4 py-3 border border-green-200">

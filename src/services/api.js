@@ -1556,23 +1556,32 @@ export const settingsAPI = {
     try {
       const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
       
+      // Default customer support number
+      const DEFAULT_SUPPORT_NUMBER = '+601121222669';
+      
       if (!settingsDoc.exists()) {
         // Return default settings
         return {
           success: true,
           data: {
             bKashNumber: '',
+            bikashQRCodeId: '',
             totalSystemCurrency: 0,
             currency: 'USD',
             referralBonus: 200,
-            supportNumber: '',
+            supportNumber: DEFAULT_SUPPORT_NUMBER,
           },
         };
       }
 
+      const data = settingsDoc.data();
       return {
         success: true,
-        data: settingsDoc.data(),
+        data: {
+          ...data,
+          // Use default support number if not set in DB
+          supportNumber: data.supportNumber || DEFAULT_SUPPORT_NUMBER,
+        },
       };
     } catch (error) {
       throw new Error(error.message || 'Failed to fetch settings');

@@ -37,7 +37,7 @@ const AdminPanel = () => {
   
   // Settings
   const { settings: contextSettings, loadSettings: reloadSettings } = useSettings();
-  const [settings, setSettings] = useState({ bKashNumber: '', totalSystemCurrency: 0, currency: 'USD', referralBonus: 200, supportNumber: '' });
+  const [settings, setSettings] = useState({ bKashNumber: '', bikashQRCodeId: '', totalSystemCurrency: 0, currency: 'USD', referralBonus: 200, supportNumber: '+601121222669' });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Sync context settings with local state
@@ -135,7 +135,16 @@ const AdminPanel = () => {
   const handleSaveSettings = async () => {
     setLoading(true);
     try {
-      await settingsAPI.updateSettings(null, settings);
+      // Default customer support number
+      const DEFAULT_SUPPORT_NUMBER = '+601121222669';
+      
+      // Prepare settings to save - use default if support number is empty
+      const settingsToSave = {
+        ...settings,
+        supportNumber: settings.supportNumber?.trim() || DEFAULT_SUPPORT_NUMBER,
+      };
+      
+      await settingsAPI.updateSettings(null, settingsToSave);
       alert("Settings saved successfully");
       setShowSettingsModal(false);
       await loadSettings();
@@ -904,6 +913,12 @@ const AdminPanel = () => {
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Bikash QR Code ID
+                    </label>
+                    <p className="text-white">{settings.bikashQRCodeId || 'Not set'}</p>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
                       Currency
                     </label>
                     <p className="text-white">
@@ -931,7 +946,7 @@ const AdminPanel = () => {
                     <label className="block text-sm font-medium text-gray-300 mb-2">
                       Support Number (WhatsApp)
                     </label>
-                    <p className="text-white">{settings.supportNumber || 'Not set'}</p>
+                    <p className="text-white">{settings.supportNumber || '+601121222669'}</p>
                   </div>
                 </div>
               </div>
@@ -954,6 +969,17 @@ const AdminPanel = () => {
                 placeholder="Enter bKash number"
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Bikash QR Code ID</label>
+              <input
+                type="text"
+                value={settings.bikashQRCodeId || ''}
+                onChange={(e) => setSettings({ ...settings, bikashQRCodeId: e.target.value })}
+                placeholder="Enter Bikash QR Code ID (used for QR code generation)"
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              />
+              <p className="text-xs text-gray-400 mt-1">This QR Code ID will always be used for payment QR codes</p>
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2">Currency</label>
@@ -998,10 +1024,10 @@ const AdminPanel = () => {
                 type="text"
                 value={settings.supportNumber || ''}
                 onChange={(e) => setSettings({ ...settings, supportNumber: e.target.value })}
-                placeholder="Enter WhatsApp support number (e.g., +601112345678)"
+                placeholder="+601121222669 (default)"
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               />
-              <p className="text-xs text-gray-400 mt-1">Support number that users can click to contact via WhatsApp</p>
+              <p className="text-xs text-gray-400 mt-1">Support number that users can click to contact via WhatsApp. Default: +601121222669</p>
             </div>
             <div className="flex gap-2">
               <button
