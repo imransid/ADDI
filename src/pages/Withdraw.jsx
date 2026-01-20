@@ -9,7 +9,7 @@ import { db } from '../config/firebase';
 import { userAPI, productAPI } from '../services/api';
 
 /**
- * Enhanced Withdraw page with NAGAD and BIKASH support
+ * Enhanced Withdraw page with BIKASH support
  * Users can add and manage their payment method details
  */
 const Withdraw = () => {
@@ -25,7 +25,6 @@ const Withdraw = () => {
   const [editingMethod, setEditingMethod] = useState(null);
   const [paymentDetails, setPaymentDetails] = useState({
     bikash: { number: '', name: '' },
-    nagad: { number: '', name: '' },
   });
   const [formData, setFormData] = useState({ number: '', name: '' });
   const [loadingDetails, setLoadingDetails] = useState(true);
@@ -51,7 +50,6 @@ const Withdraw = () => {
         const userData = userDoc.data();
         setPaymentDetails({
           bikash: userData.bikash || { number: '', name: '' },
-          nagad: userData.nagad || { number: '', name: '' },
         });
       }
     } catch (error) {
@@ -218,7 +216,7 @@ const Withdraw = () => {
         <div className="relative z-10 text-center">
           <div className="text-4xl mb-2">💸</div>
           <h1 className="text-3xl font-bold tracking-wide">Withdraw Funds</h1>
-          <p className="text-white/90 text-sm mt-2">Withdraw to NAGAD or BIKASH</p>
+          <p className="text-white/90 text-sm mt-2">Withdraw to BIKASH</p>
         </div>
       </div>
 
@@ -276,46 +274,32 @@ const Withdraw = () => {
           </div>
         </div>
 
+        {/* 72 Hours Notice */}
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl p-6 shadow-2xl text-white border-2 border-blue-400">
+          <div className="flex items-start gap-4">
+            <div className="text-4xl">⏰</div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold mb-2">Processing Time</h3>
+              <p className="text-white/90 text-sm">
+                Your withdraw amount will be received within <strong>72 Hours</strong> after submission.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Payment Method Selection */}
         <div className="bg-white rounded-2xl p-6 shadow-xl border border-gray-100">
           <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <span>💳</span> Select Payment Method
+            <span>💳</span> Payment Method
           </h2>
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => setPaymentMethod('bikash')}
-              className={`p-4 rounded-xl border-2 transition-all duration-300 ${
-                paymentMethod === 'bikash'
-                  ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
-                  : 'border-gray-200 hover:border-green-300 hover:bg-green-50/50'
-              }`}
-            >
-              <div className="text-3xl mb-2">📱</div>
-              <div className={`font-semibold ${paymentMethod === 'bikash' ? 'text-green-600' : 'text-gray-700'}`}>
-                BIKASH
-              </div>
-              {currentMethod?.number && (
-                <div className="text-xs text-gray-500 mt-1">{currentMethod.number}</div>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMethod('nagad')}
-              className={`p-4 rounded-xl border-2 transition-all duration-300 ${
-                paymentMethod === 'nagad'
-                  ? 'border-orange-500 bg-orange-50 shadow-lg transform scale-105'
-                  : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
-              }`}
-            >
-              <div className="text-3xl mb-2">📲</div>
-              <div className={`font-semibold ${paymentMethod === 'nagad' ? 'text-orange-600' : 'text-gray-700'}`}>
-                NAGAD
-              </div>
-              {paymentDetails.nagad?.number && (
-                <div className="text-xs text-gray-500 mt-1">{paymentDetails.nagad.number}</div>
-              )}
-            </button>
+          <div className="p-4 rounded-xl border-2 border-green-500 bg-green-50 shadow-lg">
+            <div className="text-3xl mb-2">📱</div>
+            <div className="font-semibold text-green-600">
+              BIKASH
+            </div>
+            {currentMethod?.number && (
+              <div className="text-xs text-gray-500 mt-1">{currentMethod.number}</div>
+            )}
           </div>
         </div>
 

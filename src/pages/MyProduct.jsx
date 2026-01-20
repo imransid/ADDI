@@ -57,7 +57,7 @@ const MyProduct = () => {
           }
         }
 
-        // Earning opportunity countdown (24-hour + 5-minute window)
+        // Earning opportunity countdown (24-hour lock + 5-hour window)
         if (product.earnAmount > 0) {
           const lastEarnAttempt = product.lastEarnAttempt?.toMillis 
             ? product.lastEarnAttempt.toMillis() 
@@ -66,7 +66,7 @@ const MyProduct = () => {
           if (lastEarnAttempt) {
             const timeSinceLastAttempt = now - lastEarnAttempt;
             const twentyFourHours = 24 * 60 * 60 * 1000;
-            const fiveMinutes = 5 * 60 * 1000;
+            const fiveHours = 5 * 60 * 60 * 1000;
 
             if (timeSinceLastAttempt < twentyFourHours) {
               // Still in 24-hour cooldown
@@ -81,31 +81,46 @@ const MyProduct = () => {
                 seconds,
                 canEarn: false,
               };
-            } else if (timeSinceLastAttempt <= twentyFourHours + fiveMinutes) {
-              // Within 5-minute window
-              const timeRemaining = (twentyFourHours + fiveMinutes) - timeSinceLastAttempt;
-              const minutes = Math.floor(timeRemaining / (60 * 1000));
+            } else if (timeSinceLastAttempt <= twentyFourHours + fiveHours) {
+              // Within 5-hour window
+              const timeRemaining = (twentyFourHours + fiveHours) - timeSinceLastAttempt;
+              const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
+              const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
               const seconds = Math.floor((timeRemaining % (60 * 1000)) / 1000);
               newEarnTimers[product.id] = {
                 status: 'window',
+                hours,
                 minutes,
                 seconds,
                 canEarn: true,
               };
             } else {
               // Window passed, calculate time until next 24-hour cycle
-              const nextCycleStart = lastEarnAttempt + (twentyFourHours * 2);
+              // After missing the window, next cycle starts 24 hours after the window closed
+              // Window closes at: lastEarnAttempt + 24h + 5h
+              // Next cycle starts at: lastEarnAttempt + 24h + 5h + 24h = lastEarnAttempt + 53h
+              const windowEndTime = lastEarnAttempt + twentyFourHours + fiveHours;
+              const nextCycleStart = windowEndTime + twentyFourHours;
               const timeUntilNextCycle = nextCycleStart - now;
-              const hours = Math.floor(timeUntilNextCycle / (60 * 60 * 1000));
-              const minutes = Math.floor((timeUntilNextCycle % (60 * 60 * 1000)) / (60 * 1000));
-              const seconds = Math.floor((timeUntilNextCycle % (60 * 1000)) / 1000);
-              newEarnTimers[product.id] = {
-                status: 'missed',
-                canEarn: false,
-                hours,
-                minutes,
-                seconds,
-              };
+              
+              if (timeUntilNextCycle > 0) {
+                const hours = Math.floor(timeUntilNextCycle / (60 * 60 * 1000));
+                const minutes = Math.floor((timeUntilNextCycle % (60 * 60 * 1000)) / (60 * 1000));
+                const seconds = Math.floor((timeUntilNextCycle % (60 * 1000)) / 1000);
+                newEarnTimers[product.id] = {
+                  status: 'missed',
+                  canEarn: false,
+                  hours,
+                  minutes,
+                  seconds,
+                };
+              } else {
+                // Should be available now (next cycle has started)
+                newEarnTimers[product.id] = {
+                  status: 'available',
+                  canEarn: true,
+                };
+              }
             }
           } else {
             // Never earned before, can earn now
@@ -162,7 +177,7 @@ const MyProduct = () => {
 
     const earnTimer = earnTimers[productId];
     if (!earnTimer || !earnTimer.canEarn) {
-      alert('Earning opportunity is not available. Please wait for the next 24-hour window.');
+      alert('Earning opportunity is not available. Please wait for the next 24-hour cycle.');
       return;
     }
 
@@ -512,17 +527,17 @@ const MyProduct = () => {
                                     </div>
                                     <div className="flex-1">
                                       <div className="text-sm font-bold text-orange-700">
-                                        ⏰ 5-Minute Window Open!
+                                        ⏰ 5-Hour Window Open!
                                       </div>
                                       <div className="text-xs text-orange-600 mt-0.5">
-                                        Act fast - window closing soon
+                                        You can earn once during this window
                                       </div>
                                     </div>
                                   </div>
                                   <div className="bg-white/50 rounded-lg p-2 text-center">
                                     <div className="text-xs text-gray-600 mb-1">Time Remaining:</div>
                                     <div className="text-lg font-bold text-orange-700">
-                                      {formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
+                                      {formatTime(earnTimers[product.id].hours)}:{formatTime(earnTimers[product.id].minutes)}:{formatTime(earnTimers[product.id].seconds)}
                                     </div>
                                   </div>
                                 </div>

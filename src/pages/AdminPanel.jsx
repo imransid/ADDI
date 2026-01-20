@@ -564,7 +564,21 @@ const AdminPanel = () => {
                   <button
                     onClick={() => {
                       setEditingProduct(null);
-                      setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
+                      // Auto-set validation date to 45 days from today
+                      const today = new Date();
+                      const expiryDate = new Date(today);
+                      expiryDate.setDate(today.getDate() + 45);
+                      const expiryDateStr = expiryDate.toISOString().split('T')[0];
+                      
+                      setProductForm({ 
+                        name: "", 
+                        price: "", 
+                        description: "", 
+                        imageUrl: "", 
+                        validateDate: expiryDateStr, 
+                        earnAmount: "", 
+                        totalEarning: "" 
+                      });
                       setShowProductModal(true);
                     }}
                     className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-sm"
@@ -1118,7 +1132,11 @@ const AdminPanel = () => {
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
                   required
                 />
-                <p className="text-xs text-gray-400 mt-1">Product will expire after this date</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {editingProduct 
+                    ? "Product will expire after this date" 
+                    : "Auto-set to 45 days from today. Product will expire after this date"}
+                </p>
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">Earn Amount (Daily)</label>

@@ -204,7 +204,7 @@ export const authAPI = {
         updatedAt: serverTimestamp(),
       });
 
-      // Update referrer's referral count and give bonus if applicable
+      // Update referrer's referral count (bonus will be given when referred user purchases)
       if (referrerId) {
         const referrerRef = doc(db, 'users', referrerId);
         const referrerDoc = await getDoc(referrerRef);
@@ -213,46 +213,6 @@ export const authAPI = {
           await updateDoc(referrerRef, {
             totalReferrals: increment(1),
             updatedAt: serverTimestamp(),
-          });
-
-          // Give bonus to referrer (same amount as new user gets)
-          const referrerWalletRef = doc(db, 'wallets', referrerId);
-          const referrerWalletDoc = await getDoc(referrerWalletRef);
-          
-          if (referrerWalletDoc.exists()) {
-            // Add bonus to referrer's balance and earnings
-            await updateDoc(referrerWalletRef, {
-              balanceWallet: increment(referralBonus),
-              totalEarnings: increment(referralBonus),
-              incomeToday: increment(referralBonus),
-              updatedAt: serverTimestamp(),
-            });
-          } else {
-            // Create wallet if it doesn't exist
-            await setDoc(referrerWalletRef, {
-              userId: referrerId,
-              rechargeWallet: 0,
-              balanceWallet: referralBonus,
-              totalEarnings: referralBonus,
-              totalWithdrawals: 0,
-              incomeToday: referralBonus,
-              incomeYesterday: 0,
-              lossToday: 0,
-              lossTotal: 0,
-              updatedAt: serverTimestamp(),
-            });
-          }
-
-          // Create transaction record for referrer's bonus
-          await addDoc(collection(db, 'transactions'), {
-            userId: referrerId,
-            type: 'referral_bonus',
-            amount: referralBonus,
-            status: 'completed',
-            description: `Referral bonus for ${name} (${phone})`,
-            referredUserId: newUserRef.id,
-            transactionId: 'REF_' + Date.now() + '_' + referrerId,
-            createdAt: serverTimestamp(),
           });
 
           // Check and update VIP level for referrer
@@ -410,6 +370,54 @@ export const userAPI = {
       };
     } catch (error) {
       throw new Error(error.message || 'Failed to update profile');
+    }
+  },
+
+  // Get referral statistics (total referrals, purchased, not purchased)
+  getReferralStatistics: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      
+      // Get all users referred by this user
+      const usersRef = collection(db, 'users');
+      const referralsQuery = query(usersRef, where('referredBy', '==', user.id));
+      const referralsSnapshot = await getDocs(referralsQuery);
+      
+      const totalReferrals = referralsSnapshot.size;
+      let purchasedCount = 0;
+      let notPurchasedCount = 0;
+      
+      // Check each referral's purchase status
+      const referralChecks = referralsSnapshot.docs.map(async (referralDoc) => {
+        const referralId = referralDoc.id;
+        const userProductsRef = collection(db, 'userProducts');
+        const purchaseQuery = query(userProductsRef, where('userId', '==', referralId));
+        const purchaseSnapshot = await getDocs(purchaseQuery);
+        return !purchaseSnapshot.empty;
+      });
+      
+      const purchaseStatuses = await Promise.all(referralChecks);
+      purchaseStatuses.forEach((hasPurchased) => {
+        if (hasPurchased) {
+          purchasedCount++;
+        } else {
+          notPurchasedCount++;
+        }
+      });
+
+      return {
+        success: true,
+        data: {
+          totalReferrals,
+          purchasedCount,
+          notPurchasedCount,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch referral statistics');
     }
   },
 };
@@ -833,6 +841,11 @@ export const productAPI = {
       const purchaseSnapshot = await getDocs(purchaseQuery);
       const isFirstPurchase = purchaseSnapshot.empty;
 
+      // Get user document (needed for account activation and referral bonus)
+      const userRef = doc(db, 'users', user.id);
+      const userDoc = await getDoc(userRef);
+      const userData = userDoc.exists() ? userDoc.data() : null;
+
       // Deduct from recharge wallet
       await updateDoc(doc(db, 'wallets', user.id), {
         rechargeWallet: increment(-productData.price),
@@ -841,21 +854,17 @@ export const productAPI = {
 
       // Auto-activate account on first purchase
       let accountActivated = false;
-      if (isFirstPurchase) {
-        const userRef = doc(db, 'users', user.id);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists() && !userDoc.data().isActive) {
-          await updateDoc(userRef, {
-            isActive: true,
-            activatedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          accountActivated = true;
-          
-          // Update localStorage user object
-          const updatedUser = { ...user, isActive: true };
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-        }
+      if (isFirstPurchase && userData && !userData.isActive) {
+        await updateDoc(userRef, {
+          isActive: true,
+          activatedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        accountActivated = true;
+        
+        // Update localStorage user object
+        const updatedUser = { ...user, isActive: true };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
       }
 
       // Create user product purchase record
@@ -894,6 +903,69 @@ export const productAPI = {
         transactionId: 'TXN_' + Date.now(),
         createdAt: serverTimestamp(),
       });
+
+      // Check if user has a referrer and give bonus when referred user purchases product
+      if (userData) {
+        const referrerId = userData.referredBy;
+        
+        if (referrerId) {
+          // Get referral bonus amount from settings
+          let referralBonus = 200; // Default fallback
+          try {
+            const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
+            if (settingsDoc.exists()) {
+              referralBonus = settingsDoc.data().referralBonus || 200;
+            }
+          } catch (error) {
+            console.error('Failed to fetch referral bonus from settings, using default:', error);
+          }
+          
+          // Get referrer's wallet
+          const referrerWalletRef = doc(db, 'wallets', referrerId);
+          const referrerWalletDoc = await getDoc(referrerWalletRef);
+          
+          if (referrerWalletDoc.exists()) {
+            // Add bonus to referrer's balance and earnings
+            await updateDoc(referrerWalletRef, {
+              balanceWallet: increment(referralBonus),
+              totalEarnings: increment(referralBonus),
+              incomeToday: increment(referralBonus),
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            // Create wallet if it doesn't exist
+            await setDoc(referrerWalletRef, {
+              userId: referrerId,
+              rechargeWallet: 0,
+              balanceWallet: referralBonus,
+              totalEarnings: referralBonus,
+              totalWithdrawals: 0,
+              incomeToday: referralBonus,
+              incomeYesterday: 0,
+              lossToday: 0,
+              lossTotal: 0,
+              updatedAt: serverTimestamp(),
+            });
+          }
+          
+          // Get referrer's name for transaction description
+          const referrerUserDoc = await getDoc(doc(db, 'users', referrerId));
+          const referrerName = referrerUserDoc.exists() ? referrerUserDoc.data().name : 'Unknown';
+          
+          // Create transaction record for referrer's bonus
+          await addDoc(collection(db, 'transactions'), {
+            userId: referrerId,
+            type: 'referral_purchase_bonus',
+            amount: referralBonus,
+            status: 'completed',
+            description: `Referral bonus for ${userData.name || 'user'}'s product purchase`,
+            referredUserId: user.id,
+            referredUserPurchaseId: purchaseRef.id,
+            transactionId: 'REF_PURCHASE_' + Date.now() + '_' + referrerId,
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
 
       return {
         success: true,
@@ -1017,7 +1089,7 @@ export const productAPI = {
     }
   },
 
-  // Earn from a product (24-hour cooldown + 5-minute window)
+  // Earn from a product (24-hour lock + 5-hour window)
   earnFromProduct: async (token, userProductId) => {
     try {
       const userStr = localStorage.getItem('user');
@@ -1067,7 +1139,7 @@ export const productAPI = {
       if (lastEarnAttempt) {
         const timeSinceLastAttempt = now - lastEarnAttempt;
         const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const fiveHours = 5 * 60 * 60 * 1000; // 5 hours in milliseconds
 
         // Check if 24 hours have passed
         if (timeSinceLastAttempt < twentyFourHours) {
@@ -1077,14 +1149,14 @@ export const productAPI = {
           throw new Error(`Please wait ${hours}h ${minutes}m before earning again`);
         }
 
-        // Check if within 5-minute window (24h to 24h 5min)
-        if (timeSinceLastAttempt > twentyFourHours + fiveMinutes) {
+        // Check if within 5-hour window (24h to 24h 5h)
+        if (timeSinceLastAttempt > twentyFourHours + fiveHours) {
           // Window has passed, reset lastEarnAttempt to now to start new 24h cycle
           await updateDoc(userProductRef, {
             lastEarnAttempt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
-          throw new Error('You missed the 5-minute earning window. Please wait 24 hours for the next opportunity.');
+          throw new Error('You missed the 5-hour earning window. Please wait 24 hours for the next opportunity.');
         }
       }
 

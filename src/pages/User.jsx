@@ -9,7 +9,7 @@ import { fetchWallet } from '../store/walletSlice';
 import { fetchTeam } from '../store/teamSlice';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency } from '../utils/currency';
-import { productAPI, vipAPI } from '../services/api';
+import { productAPI, vipAPI, userAPI } from '../services/api';
 
 /**
  * User (Me) page. Displays a summary of the user's wallets, earnings,
@@ -37,6 +37,14 @@ const User = () => {
   const [vipStatus, setVipStatus] = useState(null);
   const [loadingVIP, setLoadingVIP] = useState(false);
   const [claimingRewards, setClaimingRewards] = useState(false);
+
+  // Referral statistics
+  const [referralStats, setReferralStats] = useState({
+    totalReferrals: 0,
+    purchasedCount: 0,
+    notPurchasedCount: 0,
+  });
+  const [loadingReferralStats, setLoadingReferralStats] = useState(false);
 
   // Fetch account status directly from database
   const fetchAccountStatus = useCallback(async () => {
@@ -116,6 +124,25 @@ const User = () => {
     }
   }, [auth.isAuthenticated, auth.user?.id, dispatch]);
 
+  // Fetch referral statistics
+  const fetchReferralStatistics = useCallback(async () => {
+    if (!auth.isAuthenticated || !auth.user?.id) {
+      return;
+    }
+
+    try {
+      setLoadingReferralStats(true);
+      const response = await userAPI.getReferralStatistics(null);
+      if (response.success) {
+        setReferralStats(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch referral statistics:', error);
+    } finally {
+      setLoadingReferralStats(false);
+    }
+  }, [auth.isAuthenticated, auth.user?.id]);
+
   // Manually claim VIP rewards
   const handleClaimVIPRewards = async () => {
     if (!auth.isAuthenticated || !auth.user?.id) {
@@ -163,8 +190,9 @@ const User = () => {
       fetchAccountStatus();
       checkUserPurchases();
       fetchVIPStatus();
+      fetchReferralStatistics();
     }
-  }, [auth.isAuthenticated, dispatch, fetchAccountStatus, checkUserPurchases, fetchVIPStatus]);
+  }, [auth.isAuthenticated, dispatch, fetchAccountStatus, checkUserPurchases, fetchVIPStatus, fetchReferralStatistics]);
 
   // Debug: Log wallet state
 
@@ -461,6 +489,77 @@ const User = () => {
             </div>
           </div>
         )}
+
+        {/* Referral Statistics Card */}
+        <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-6 shadow-xl text-white transform hover:scale-[1.02] transition-transform duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex-1">
+              <div className="text-sm opacity-90 mb-2 flex items-center gap-2">
+                <span className="text-3xl">👥</span>
+                <span className="font-bold text-lg">Referral Statistics</span>
+              </div>
+              <div className="text-sm text-white/90 mb-4">
+                Track your referrals and their purchase status
+              </div>
+            </div>
+            <div className="text-5xl opacity-30">
+              📊
+            </div>
+          </div>
+
+          {loadingReferralStats ? (
+            <div className="flex items-center justify-center py-4">
+              <svg className="animate-spin h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {/* Total Referrals */}
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
+                <div className="text-xs text-white/80 mb-1">Total Referrals</div>
+                <div className="text-3xl font-black mb-1">
+                  {referralStats.totalReferrals}
+                </div>
+                <div className="text-xs text-white/70">All time</div>
+              </div>
+
+              {/* Purchased */}
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
+                <div className="text-xs text-white/80 mb-1">Purchased</div>
+                <div className="text-3xl font-black mb-1 text-green-300">
+                  {referralStats.purchasedCount}
+                </div>
+                <div className="text-xs text-white/70">
+                  {referralStats.totalReferrals > 0 
+                    ? `${Math.round((referralStats.purchasedCount / referralStats.totalReferrals) * 100)}%`
+                    : '0%'}
+                </div>
+              </div>
+
+              {/* Not Purchased */}
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 border border-white/30">
+                <div className="text-xs text-white/80 mb-1">Not Purchased</div>
+                <div className="text-3xl font-black mb-1 text-orange-300">
+                  {referralStats.notPurchasedCount}
+                </div>
+                <div className="text-xs text-white/70">
+                  {referralStats.totalReferrals > 0 
+                    ? `${Math.round((referralStats.notPurchasedCount / referralStats.totalReferrals) * 100)}%`
+                    : '0%'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Info Note */}
+          <div className="mt-4 bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+            <div className="text-xs text-white/90">
+              <span className="font-semibold">💡 Note:</span> You receive a bonus when your referrals purchase products (if you've purchased at least one product yourself).
+            </div>
+          </div>
+        </div>
 
         {/* Account Status Card */}
         <div className={`rounded-2xl p-6 shadow-xl text-white transform hover:scale-[1.02] transition-transform duration-300 ${
