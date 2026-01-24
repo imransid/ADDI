@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency } from '../utils/currency';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, updateDoc, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 /**
@@ -20,8 +20,8 @@ const Prize = () => {
   const [prizeWon, setPrizeWon] = useState(null);
   const [showPrize, setShowPrize] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [totalReferrals, setTotalReferrals] = useState(0);
-  const [hasThreeReferrals, setHasThreeReferrals] = useState(false);
+  const [successfulReferralsToday, setSuccessfulReferralsToday] = useState(0);
+  const [hasThreeSuccessfulToday, setHasThreeSuccessfulToday] = useState(false);
 
   const prizes = [
     { amount: 5, type: 'bonus', probability: 30 },
@@ -39,14 +39,57 @@ const Prize = () => {
   }, [user]);
 
   useEffect(() => {
-    if (hasThreeReferrals !== undefined) {
+    if (hasThreeSuccessfulToday !== undefined) {
       checkCanSmash();
       const timer = setInterval(() => {
         checkCanSmash();
       }, 1000);
       return () => clearInterval(timer);
     }
-  }, [lastSmashTime, hasThreeReferrals]);
+  }, [lastSmashTime, hasThreeSuccessfulToday]);
+
+  const startOfToday = () => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  };
+
+  const computeSuccessfulReferralsToday = async (referrerId) => {
+    const start = startOfToday();
+    const startMs = start.getTime();
+
+    const usersRef = collection(db, 'users');
+    const q = query(
+      usersRef,
+      where('referredBy', '==', referrerId),
+      where('createdAt', '>=', start)
+    );
+
+    const snap = await getDocs(q);
+
+    let count = 0;
+    snap.forEach((d) => {
+      const data = d.data();
+      const fp = data.firstPurchaseAt;
+      const fpMs = fp?.toMillis ? fp.toMillis() : (fp ? new Date(fp).getTime() : null);
+      // "Successful" = new account today + first product purchase today
+      if (fpMs && fpMs >= startMs) count++;
+    });
+
+    return count;
+  };
+
+  const refreshTodayStatus = async () => {
+    if (!user?.id) return;
+    try {
+      const count = await computeSuccessfulReferralsToday(user.id);
+      setSuccessfulReferralsToday(count);
+      setHasThreeSuccessfulToday(count >= 3);
+    } catch (e) {
+      console.error('Failed to compute today successful referrals:', e);
+      setSuccessfulReferralsToday(0);
+      setHasThreeSuccessfulToday(false);
+    }
+  };
 
   const loadLastSmashTime = async () => {
     if (!user) {
@@ -60,12 +103,9 @@ const Prize = () => {
         const userData = userDoc.data();
         const lastSmash = userData.lastEggSmash;
         setLastSmashTime(lastSmash ? lastSmash.toMillis() : null);
-        
-        // Check total referrals
-        const referrals = userData.totalReferrals || 0;
-        setTotalReferrals(referrals);
-        setHasThreeReferrals(referrals >= 3);
       }
+
+      await refreshTodayStatus();
     } catch (error) {
       console.error('Failed to load last smash time:', error);
     } finally {
@@ -74,8 +114,9 @@ const Prize = () => {
   };
 
   const checkCanSmash = () => {
-    // Only users with 3+ referrals can smash eggs
-    if (!hasThreeReferrals) {
+    // Only users with 3 successful (active) referrals TODAY can smash eggs
+    // "Active" means referred user purchased a product.
+    if (!hasThreeSuccessfulToday) {
       setCanSmash(false);
       setTimeLeft({ hours: 0, minutes: 0, seconds: 0 });
       return;
@@ -207,16 +248,23 @@ const Prize = () => {
 
       <div className="p-4 space-y-6">
         {/* Referral Status Banner */}
-        {hasThreeReferrals ? (
+        {hasThreeSuccessfulToday ? (
           <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-4 shadow-xl text-white border-2 border-green-400">
             <div className="flex items-center gap-3">
               <div className="text-3xl">⭐</div>
               <div className="flex-1">
-                <div className="font-bold text-lg mb-1">VIP Status Unlocked!</div>
+                <div className="font-bold text-lg mb-1">Prize Unlocked (Today)!</div>
                 <div className="text-sm text-green-100">
-                  You have {totalReferrals} referrals! You can smash eggs <strong>once daily</strong>.
+                  Successful referrals today: <strong>{successfulReferralsToday}/3</strong> (must purchase product).
+                  <div className="mt-1">You can smash eggs <strong>once today</strong>. Tomorrow it resets.</div>
                 </div>
               </div>
+              <button
+                onClick={refreshTodayStatus}
+                className="text-xs font-bold bg-white/20 hover:bg-white/30 border border-white/30 rounded-xl px-3 py-2 transition-colors"
+              >
+                Refresh
+              </button>
             </div>
           </div>
         ) : (
@@ -226,15 +274,23 @@ const Prize = () => {
               <div className="flex-1">
                 <div className="font-bold text-lg mb-1">Egg Smashing Locked</div>
                 <div className="text-sm text-orange-100">
-                  You have {totalReferrals} referrals. You need <strong>{3 - totalReferrals} more successful referrals</strong> to unlock daily egg smashing!
+                  Successful referrals today: <strong>{successfulReferralsToday}/3</strong>.
+                  You need <strong>{Math.max(0, 3 - successfulReferralsToday)} more</strong> new users to register and purchase a product today.
+                  <div className="mt-1">Tomorrow everything resets.</div>
                 </div>
               </div>
+              <button
+                onClick={refreshTodayStatus}
+                className="text-xs font-bold bg-white/20 hover:bg-white/30 border border-white/30 rounded-xl px-3 py-2 transition-colors"
+              >
+                Refresh
+              </button>
             </div>
           </div>
         )}
 
         {/* Cooldown Timer Card */}
-        {!canSmash && hasThreeReferrals && (
+        {!canSmash && hasThreeSuccessfulToday && (
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 shadow-2xl text-white border-2 border-yellow-400/30">
             <div className="text-center">
               <div className="text-yellow-400 text-sm mb-2 font-semibold">
@@ -264,7 +320,7 @@ const Prize = () => {
         )}
 
         {/* Ready to Smash Card */}
-        {canSmash && hasThreeReferrals && (
+        {canSmash && hasThreeSuccessfulToday && (
           <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 shadow-2xl text-white border-2 border-yellow-400 animate-pulse">
             <div className="text-center">
               <div className="text-3xl mb-2">✨</div>
@@ -285,9 +341,9 @@ const Prize = () => {
               <button
                 key={idx}
                 onClick={() => handleSmash(idx)}
-                disabled={!canClick || !hasThreeReferrals}
+                disabled={!canClick || !hasThreeSuccessfulToday}
                 className={`relative focus:outline-none transition-all duration-300 transform ${
-                  canClick && hasThreeReferrals
+                  canClick && hasThreeSuccessfulToday
                     ? 'hover:scale-110 hover:-translate-y-2 cursor-pointer'
                     : 'opacity-50 cursor-not-allowed'
                 } ${isSmashing ? 'scale-125 rotate-12' : ''}`}
@@ -392,15 +448,15 @@ const Prize = () => {
             <li className="flex items-start gap-2">
               <span className="text-yellow-500 font-bold">•</span>
               <span>
-                {hasThreeReferrals 
-                  ? 'VIP users (3+ referrals) can smash eggs once daily'
-                  : 'You need 3 successful referrals to unlock daily egg smashing'}
+                {hasThreeSuccessfulToday
+                  ? 'You can smash once today (resets tomorrow)'
+                  : 'You need 3 new referred users to purchase a product today to unlock prize'}
               </span>
             </li>
-            {!hasThreeReferrals && (
+            {!hasThreeSuccessfulToday && (
               <li className="flex items-start gap-2">
                 <span className="text-yellow-500 font-bold">•</span>
-                <span>Share your referral code and get 3 people to sign up to unlock this feature!</span>
+                <span>Share your referral code. New users must register and purchase a product today.</span>
               </li>
             )}
             <li className="flex items-start gap-2">

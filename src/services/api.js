@@ -864,6 +864,18 @@ export const productAPI = {
         localStorage.setItem('user', JSON.stringify(updatedUser));
       }
 
+      // Mark first purchase time for "active referral" logic (Prize eligibility)
+      if (isFirstPurchase && userData && !userData.firstPurchaseAt) {
+        try {
+          await updateDoc(userRef, {
+            firstPurchaseAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (fpError) {
+          console.error('Failed to set firstPurchaseAt:', fpError);
+        }
+      }
+
       // Create user product purchase record
       // Handle validateDate (legacy) and validityDays (preferred duration)
       const nowDate = new Date();
@@ -904,7 +916,12 @@ export const productAPI = {
         validateDate: validateDateValue, // Optional legacy absolute expiry date
         validityDays: validityDays, // Preferred validity duration (days)
         earnAmount: productData.earnAmount || 0, // Daily earn amount from product
-        lastEarnAttempt: null, // Track last earn attempt time
+        // New earning schedule:
+        // - 3-hour earning window every 24 hours
+        // - After the 3-hour window ends, user waits 21 hours until the next window
+        // We store the next/current window start here.
+        earnWindowStartAt: serverTimestamp(),
+        lastEarnAttempt: null, // Legacy (no longer used for timing)
         totalEarnings: 0,
         createdAt: serverTimestamp(),
       });
@@ -1119,7 +1136,7 @@ export const productAPI = {
     }
   },
 
-  // Earn from a product (24-hour lock + 5-hour window)
+  // Earn from a product (3-hour window every 24 hours)
   earnFromProduct: async (token, userProductId) => {
     try {
       const userStr = localStorage.getItem('user');
@@ -1161,33 +1178,62 @@ export const productAPI = {
         throw new Error('This product does not have an earn amount configured');
       }
 
-      // Check last earn attempt
-      const lastEarnAttempt = userProduct.lastEarnAttempt?.toMillis 
-        ? userProduct.lastEarnAttempt.toMillis() 
-        : (userProduct.lastEarnAttempt ? new Date(userProduct.lastEarnAttempt).getTime() : null);
+      const THREE_HOURS = 3 * 60 * 60 * 1000;
+      const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
-      if (lastEarnAttempt) {
-        const timeSinceLastAttempt = now - lastEarnAttempt;
-        const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-        const fiveHours = 5 * 60 * 60 * 1000; // 5 hours in milliseconds
+      const toMs = (ts) =>
+        ts?.toMillis ? ts.toMillis() : (ts ? new Date(ts).getTime() : null);
 
-        // Check if 24 hours have passed
-        if (timeSinceLastAttempt < twentyFourHours) {
-          const timeRemaining = twentyFourHours - timeSinceLastAttempt;
-          const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
-          const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
-          throw new Error(`Please wait ${hours}h ${minutes}m before earning again`);
-        }
+      // `earnWindowStartAt` defines the start of the earning window for this product.
+      // Window is open for 3 hours. Next window starts 24 hours after the previous window start.
+      // Backward compatibility: if missing, anchor to `purchaseDate` so the window still
+      // expires even if user never clicks "Earn".
+      let baseWindowStartMs = toMs(userProduct.earnWindowStartAt) ?? toMs(userProduct.purchaseDate);
 
-        // Check if within 5-hour window (24h to 24h 5h)
-        if (timeSinceLastAttempt > twentyFourHours + fiveHours) {
-          // Window has passed, reset lastEarnAttempt to now to start new 24h cycle
-          await updateDoc(userProductRef, {
-            lastEarnAttempt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          throw new Error('You missed the 5-hour earning window. Please wait 24 hours for the next opportunity.');
-        }
+      // If still missing (should be rare), initialize window starting now.
+      if (!baseWindowStartMs) {
+        await updateDoc(userProductRef, {
+          earnWindowStartAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        baseWindowStartMs = now;
+      } else if (!userProduct.earnWindowStartAt) {
+        // Persist the derived anchor once so all clients behave consistently.
+        await updateDoc(userProductRef, {
+          earnWindowStartAt: new Date(baseWindowStartMs),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      // Bring the window start forward to the most recent cycle that started <= now.
+      const cyclesElapsed = Math.floor(Math.max(0, now - baseWindowStartMs) / TWENTY_FOUR_HOURS);
+      const windowStartMs = baseWindowStartMs + cyclesElapsed * TWENTY_FOUR_HOURS;
+      const windowEndMs = windowStartMs + THREE_HOURS;
+
+      if (now < windowStartMs) {
+        const timeRemaining = windowStartMs - now;
+        const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
+        const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
+        const seconds = Math.floor((timeRemaining % (60 * 1000)) / 1000);
+        throw new Error(`Earning not available yet. Window opens in ${hours}h ${minutes}m ${seconds}s`);
+      }
+
+      if (now > windowEndMs) {
+        // Missed this cycle's 3-hour earning window.
+        const nextWindowStartMs = windowStartMs + TWENTY_FOUR_HOURS;
+        const timeRemaining = nextWindowStartMs - now;
+        const hours = Math.max(0, Math.floor(timeRemaining / (60 * 60 * 1000)));
+        const minutes = Math.max(0, Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000)));
+        const seconds = Math.max(0, Math.floor((timeRemaining % (60 * 1000)) / 1000));
+
+        // Advance the stored window start so UI shows correct cooldown going forward.
+        await updateDoc(userProductRef, {
+          earnWindowStartAt: new Date(nextWindowStartMs),
+          earnLastMissedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        throw new Error(`You missed the 3-hour earning window. Next opportunity in ${hours}h ${minutes}m ${seconds}s`);
       }
 
       // Get wallet
@@ -1208,9 +1254,14 @@ export const productAPI = {
         updatedAt: serverTimestamp(),
       });
 
-      // Update user product - update lastEarnAttempt and totalEarnings
+      // After a successful earn, move the next earning window to the next cycle.
+      const nextWindowStartMs = windowStartMs + TWENTY_FOUR_HOURS;
+
+      // Update user product - update window schedule and totalEarnings
       await updateDoc(userProductRef, {
-        lastEarnAttempt: serverTimestamp(),
+        earnWindowStartAt: new Date(nextWindowStartMs),
+        lastEarnAttempt: serverTimestamp(), // legacy audit only
+        lastEarnClaimAt: serverTimestamp(),
         totalEarnings: increment(earnAmount),
         updatedAt: serverTimestamp(),
       });
