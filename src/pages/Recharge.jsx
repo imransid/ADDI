@@ -8,7 +8,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency, getCurrencySymbol } from '../utils/currency';
 
 // Component to display default Bikash QR code image
-const DefaultBikashQR = () => {
+const DefaultBikashQR = ({ size = 220 }) => {
   const [imageError, setImageError] = useState(false);
   const [imageSrc, setImageSrc] = useState(null);
 
@@ -45,7 +45,10 @@ const DefaultBikashQR = () => {
 
   if (imageError || !imageSrc) {
     return (
-      <div className="w-[220px] h-[220px] flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg">
+      <div
+        style={{ width: size, height: size }}
+        className="flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg"
+      >
         <svg
           xmlns="http://www.w3.org/2000/svg"
           className="h-12 w-12 mb-2"
@@ -67,10 +70,10 @@ const DefaultBikashQR = () => {
   }
 
   return (
-    <div className="w-[220px] h-[220px] flex items-center justify-center bg-white">
+    <div style={{ width: size, height: size }} className="flex items-center justify-center bg-white">
       <img 
         src={imageSrc} 
-        alt="Default Bikash QR Code"
+        alt="Default Touch 'n Go QR Code"
         className="w-full h-full object-contain"
       />
     </div>
@@ -78,7 +81,7 @@ const DefaultBikashQR = () => {
 };
 
 /**
- * Recharge page. Allows the user to select an amount and shows QR code for bKash payment.
+ * Recharge page. Allows the user to select an amount and shows QR code for Touch 'n Go payment.
  * After payment, user can submit proof for admin approval.
  * Beautiful modern UI with gradients and animations.
  */
@@ -89,6 +92,7 @@ const Recharge = () => {
   const { settings, loading: settingsLoading } = useSettings();
   const [amount, setAmount] = useState('60');
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showQRZoom, setShowQRZoom] = useState(false);
   const [proofImageUrl, setProofImageUrl] = useState('');
   const [proofImageFile, setProofImageFile] = useState(null);
   const [proofImagePreview, setProofImagePreview] = useState('');
@@ -97,10 +101,10 @@ const Recharge = () => {
   const GOOGLE_DRIVE_FOLDER_ID = '1ErJTfAu21KXcqwRvFSGun79D_t-b0SyY';
   const GOOGLE_DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${GOOGLE_DRIVE_FOLDER_ID}`;
   
-  // Get bikashQRCodeId and bKashNumber from settings context
+  // Touch 'n Go settings (stored under existing keys for backward compatibility)
   // Always use bikashQRCodeId for QR code generation (not bKashNumber)
   const bikashQRCodeId = settings?.bikashQRCodeId || '';
-  const bKashNumber = settings?.bKashNumber || '';
+  const touchNGoNumber = settings?.bKashNumber || '';
 
   const handleShowQR = async (e) => {
     e.preventDefault();
@@ -383,7 +387,7 @@ const Recharge = () => {
             <div className="flex-1">
               <h3 className="font-bold text-gray-800 mb-1">How it works</h3>
               <p className="text-sm text-gray-600 leading-relaxed">
-                Select your recharge amount, scan the QR code or use the bKash number to send payment. 
+                Select your recharge amount, touch & scan the QR code (or use the bKash number) to send payment.
                 Upload proof of payment (optional) and wait for admin approval.
               </p>
             </div>
@@ -419,6 +423,7 @@ const Recharge = () => {
               <button
                 onClick={() => {
                   setShowQRModal(false);
+                  setShowQRZoom(false);
                   setProofImageUrl('');
                   setProofImageFile(null);
                   setProofImagePreview('');
@@ -445,17 +450,36 @@ const Recharge = () => {
             {/* QR Code Section */}
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 mb-6 border-2 border-green-100">
               <div className="flex flex-col items-center">
-                <div className="bg-white p-5 rounded-2xl shadow-lg mb-4 border-4 border-green-200">
+                <div className="w-full flex items-center justify-between mb-3">
+                  <div className="text-sm font-bold text-green-700 flex items-center gap-2">
+                    <span className="text-lg">👆</span> Touch &amp; Scan
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQRZoom(true)}
+                    className="text-xs font-semibold text-green-700 bg-white/80 border border-green-200 px-3 py-1.5 rounded-full hover:bg-white transition-colors"
+                  >
+                    Tap to zoom
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowQRZoom(true)}
+                  className="relative bg-white p-5 rounded-2xl shadow-lg mb-4 border-4 border-green-200 cursor-pointer active:scale-[0.99] transition-transform"
+                  aria-label="Touch and scan QR code (tap to zoom)"
+                >
+                  <div className="absolute -inset-2 rounded-3xl border-2 border-green-400/40 animate-pulseRing pointer-events-none" />
                   {bikashQRCodeId ? (
                     <QRCodeSVG value={bikashQRCodeId} size={220} />
                   ) : (
-                    <DefaultBikashQR />
+                    <DefaultBikashQR size={220} />
                   )}
-                </div>
+                </button>
                 <div className="text-center space-y-2">
                   <div className="bg-white/80 backdrop-blur-sm rounded-xl px-4 py-3 border border-green-200">
-                    <p className="text-xs text-gray-600 mb-1 font-medium">Send money to bKash number:</p>
-                    <p className="text-xl font-bold text-green-600">{bKashNumber}</p>
+                    <p className="text-xs text-gray-600 mb-1 font-medium">Send money to Touch 'n Go number:</p>
+                    <p className="text-xl font-bold text-green-600">{touchNGoNumber}</p>
                   </div>
                   <div className="bg-white/80 backdrop-blur-sm rounded-xl px-4 py-3 border border-green-200">
                     <p className="text-xs text-gray-600 mb-1 font-medium">Amount to send:</p>
@@ -464,6 +488,52 @@ const Recharge = () => {
                 </div>
               </div>
             </div>
+
+            {/* QR Zoom Overlay */}
+            {showQRZoom && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-fadeIn">
+                <div className="bg-white rounded-3xl p-5 max-w-lg w-full shadow-2xl border-4 border-green-100 animate-scaleIn">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="font-bold text-gray-800 flex items-center gap-2">
+                      <span>Touch &amp; Scan</span>
+                      <span className="text-xs text-gray-500 font-semibold">(Zoom)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowQRZoom(false)}
+                      className="text-gray-500 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                      aria-label="Close QR zoom"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-center">
+                    <div className="relative bg-white p-4 rounded-2xl border-4 border-green-200 shadow-lg">
+                      <div className="absolute -inset-2 rounded-3xl border-2 border-green-400/40 animate-pulseRing pointer-events-none" />
+                      {bikashQRCodeId ? (
+                        <QRCodeSVG value={bikashQRCodeId} size={320} />
+                      ) : (
+                        <DefaultBikashQR size={320} />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
+                      <div className="text-xs text-gray-500 font-semibold mb-1">Touch 'n Go number</div>
+                      <div className="text-sm font-bold text-gray-800 break-all">{touchNGoNumber || '-'}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 text-center">
+                      <div className="text-xs text-gray-500 font-semibold mb-1">Amount</div>
+                      <div className="text-sm font-bold text-gray-800">{formatCurrency(parseFloat(amount) || 0, settings.currency)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Proof Upload Section */}
             <div className="mb-6">
@@ -631,6 +701,7 @@ const Recharge = () => {
               <button
                 onClick={() => {
                   setShowQRModal(false);
+                  setShowQRZoom(false);
                   setProofImageUrl('');
                   setProofImageFile(null);
                   setProofImagePreview('');

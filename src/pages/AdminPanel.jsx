@@ -441,20 +441,20 @@ const AdminPanel = () => {
           </div>
           <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
             <div className="text-gray-400 text-xs mb-1">Total Recharge</div>
-            <div className="text-2xl font-bold text-green-400">{formatCurrency(stats.totalRecharge)}</div>
+            <div className="text-2xl font-bold text-green-400">{formatCurrency(stats.totalRecharge, settings.currency)}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
             <div className="text-gray-400 text-xs mb-1">Total Withdraw</div>
-            <div className="text-2xl font-bold text-red-400">{formatCurrency(stats.totalWithdraw)}</div>
+            <div className="text-2xl font-bold text-red-400">{formatCurrency(stats.totalWithdraw, settings.currency)}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 border-yellow-500/50">
             <div className="text-gray-400 text-xs mb-1">System Currency</div>
-            <div className="text-2xl font-bold text-yellow-400">{formatCurrency(stats.totalSystemCurrency)}</div>
+            <div className="text-2xl font-bold text-yellow-400">{formatCurrency(stats.totalSystemCurrency, settings.currency)}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 border-blue-500/50">
             <div className="text-gray-400 text-xs mb-1">Total Balance</div>
             <div className={`text-2xl font-bold ${stats.totalBalance >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
-              {formatCurrency(stats.totalBalance)}
+              {formatCurrency(stats.totalBalance, settings.currency)}
             </div>
             <div className="text-[10px] text-gray-500 mt-1">Recharge - Withdraw</div>
           </div>
@@ -610,7 +610,7 @@ const AdminPanel = () => {
                     >
                       <h3 className="font-semibold mb-2">{product.name}</h3>
                       <p className="text-green-400 text-lg font-bold mb-2">
-                        ${product.price}
+                        {formatCurrency(product.price, settings.currency)}
                       </p>
                       <p className="text-gray-400 text-sm mb-2">
                         Validity: {getProductValidityDays(product) !== null ? `${getProductValidityDays(product)} days` : "—"}
@@ -690,7 +690,7 @@ const AdminPanel = () => {
                               {transaction.type}
                             </span>
                           </td>
-                          <td className="p-3 font-semibold">{formatCurrency(transaction.amount)}</td>
+                          <td className="p-3 font-semibold">{formatCurrency(transaction.amount, settings.currency)}</td>
                           <td className="p-3">
                             <span
                               className={`px-2 py-1 rounded text-xs ${
@@ -756,10 +756,10 @@ const AdminPanel = () => {
                           </td>
                           <td className="p-3 font-semibold text-red-400">
                             <div>
-                              <div className="font-semibold">{formatCurrency(withdrawal.amount)}</div>
+                              <div className="font-semibold">{formatCurrency(withdrawal.amount, settings.currency)}</div>
                               {withdrawal.vatTax && (
                                 <div className="text-xs text-gray-400 mt-1">
-                                  VAT (10%): {formatCurrency(withdrawal.vatTax)} | Net: {formatCurrency(withdrawal.netAmount || (withdrawal.amount - withdrawal.vatTax))}
+                                  VAT (10%): {formatCurrency(withdrawal.vatTax, settings.currency)} | Net: {formatCurrency(withdrawal.netAmount || (withdrawal.amount - withdrawal.vatTax), settings.currency)}
                                 </div>
                               )}
                             </div>
@@ -869,7 +869,7 @@ const AdminPanel = () => {
                             <div className="text-xs text-gray-400">{recharge.userPhone}</div>
                           </td>
                           <td className="p-3 font-semibold text-green-400">
-                            {formatCurrency(recharge.amount)}
+                            {formatCurrency(recharge.amount, settings.currency)}
                           </td>
                           <td className="p-3">
                             {recharge.proofImageUrl ? (
@@ -934,13 +934,13 @@ const AdminPanel = () => {
                 <div className="bg-gray-700 p-4 rounded-lg">
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      bKash Number
+                      Touch 'n Go Number
                     </label>
                     <p className="text-white">{settings.bKashNumber || 'Not set'}</p>
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Bikash QR Code ID
+                      Touch 'n Go QR Code ID
                     </label>
                     <p className="text-white">{settings.bikashQRCodeId || 'Not set'}</p>
                   </div>
@@ -957,7 +957,7 @@ const AdminPanel = () => {
                       Total System Currency
                     </label>
                     <p className="text-white text-lg font-semibold">
-                      {formatCurrency(settings.totalSystemCurrency || 0)}
+                      {formatCurrency(settings.totalSystemCurrency || 0, settings.currency)}
                     </p>
                   </div>
                   <div className="mb-4">
@@ -967,7 +967,7 @@ const AdminPanel = () => {
                     <p className="text-white text-lg font-semibold">
                       {formatCurrency(settings.referralBonus || 200, settings.currency)}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">Bonus amount new users get when signing up with referral code</p>
+                    <p className="text-xs text-gray-400 mt-1">Bonus amount the referrer gets after the referred user’s first product purchase</p>
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -988,22 +988,22 @@ const AdminPanel = () => {
           <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full border border-gray-700">
             <h2 className="text-xl font-semibold mb-4">Edit Settings</h2>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">bKash Number</label>
+              <label className="block text-sm font-medium mb-2">Touch 'n Go Number</label>
               <input
                 type="text"
                 value={settings.bKashNumber}
                 onChange={(e) => setSettings({ ...settings, bKashNumber: e.target.value })}
-                placeholder="Enter bKash number"
+                placeholder="Enter Touch 'n Go number"
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               />
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Bikash QR Code ID</label>
+              <label className="block text-sm font-medium mb-2">Touch 'n Go QR Code ID</label>
               <input
                 type="text"
                 value={settings.bikashQRCodeId || ''}
                 onChange={(e) => setSettings({ ...settings, bikashQRCodeId: e.target.value })}
-                placeholder="Enter Bikash QR Code ID (used for QR code generation)"
+                placeholder="Enter Touch 'n Go QR Code ID (used for QR code generation)"
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               />
               <p className="text-xs text-gray-400 mt-1">This QR Code ID will always be used for payment QR codes</p>
@@ -1043,7 +1043,7 @@ const AdminPanel = () => {
                 placeholder="Enter invitation bonus amount"
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               />
-              <p className="text-xs text-gray-400 mt-1">Bonus amount new users get when signing up with referral code</p>
+              <p className="text-xs text-gray-400 mt-1">Bonus amount the referrer gets after the referred user’s first product purchase</p>
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2">Support Number (WhatsApp)</label>

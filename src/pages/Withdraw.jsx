@@ -225,9 +225,9 @@ const Withdraw = () => {
         {!isWeekend && (
           <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl p-6 shadow-2xl text-white border-2 border-orange-400">
             <div className="flex items-start gap-4">
-              <div className="text-4xl">📅</div>
+              <div className="text-4xl animate-pulse">📅</div>
               <div className="flex-1">
-                <h3 className="text-xl font-bold mb-2">Withdrawals Not Available</h3>
+                <h3 className="text-xl font-bold mb-2">Only Saturday and Sunday Withdraw possible</h3>
                 <p className="text-white/90 text-sm mb-2">
                   Withdrawals are only available on <strong>Saturday</strong> and <strong>Sunday</strong>.
                 </p>
@@ -277,12 +277,22 @@ const Withdraw = () => {
         {/* 72 Hours Notice */}
         <div className="bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl p-6 shadow-2xl text-white border-2 border-blue-400">
           <div className="flex items-start gap-4">
-            <div className="text-4xl">⏰</div>
+            <div className="text-4xl animate-pulse">⏰</div>
             <div className="flex-1">
-              <h3 className="text-xl font-bold mb-2">Processing Time</h3>
+              <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+                Processing Time
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-white/90 rounded-full animate-bounce" />
+                  <span className="w-1.5 h-1.5 bg-white/90 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-white/90 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+              </h3>
               <p className="text-white/90 text-sm">
                 Your withdraw amount will be received within <strong>72 Hours</strong> after submission.
               </p>
+              <div className="mt-4 h-1.5 rounded-full bg-white/20 overflow-hidden">
+                <div className="h-full w-full animate-shimmer" />
+              </div>
             </div>
           </div>
         </div>
