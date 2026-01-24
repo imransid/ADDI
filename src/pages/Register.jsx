@@ -168,8 +168,10 @@ const Register = () => {
               <div className="flex items-center gap-2 text-green-800">
                 <span className="text-2xl">🎁</span>
                 <div>
-                  <div className="font-bold text-sm">Welcome Bonus!</div>
-                  <div className="text-xs">You'll receive {formatCurrency(settings.referralBonus || 200, settings.currency)} when you sign up</div>
+                  <div className="font-bold text-sm">Referral detected</div>
+                  <div className="text-xs">
+                    Your referrer will receive {formatCurrency(settings.referralBonus || 200, settings.currency)} after your first product purchase.
+                  </div>
                 </div>
               </div>
             </div>

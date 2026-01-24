@@ -176,25 +176,13 @@ export const authAPI = {
         lastLogin: null,
       });
 
-      // Get referral bonus amount from settings
-      let referralBonus = 200; // Default fallback
-      try {
-        const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
-        if (settingsDoc.exists()) {
-          referralBonus = settingsDoc.data().referralBonus || 200;
-        }
-      } catch (error) {
-        console.error('Failed to fetch referral bonus from settings, using default:', error);
-      }
-
-      // Calculate initial balance (referralBonus if referred, 0 otherwise)
-      const initialBalance = referrerId ? referralBonus : 0;
-
       // Initialize wallet for new user
       await setDoc(doc(db, 'wallets', newUserRef.id), {
         userId: newUserRef.id,
         rechargeWallet: 0,
-        balanceWallet: initialBalance, // Give 200 balance if referred
+        // No signup bonus for referred users. Referrer is rewarded after the
+        // referred user's first successful product purchase.
+        balanceWallet: 0,
         totalEarnings: 0,
         totalWithdrawals: 0,
         incomeToday: 0,
@@ -239,7 +227,7 @@ export const authAPI = {
             role: 'consumer',
             isActive: true, // Consumers are automatically activated on sign up
           },
-          referralBonus: initialBalance > 0 ? initialBalance : 0,
+          referralBonus: 0,
         },
       };
     } catch (error) {
@@ -933,11 +921,12 @@ export const productAPI = {
         createdAt: serverTimestamp(),
       });
 
-      // Check if user has a referrer and give bonus when referred user purchases product
+      // Check if user has a referrer and give bonus ONLY on the referred user's first purchase
       if (userData) {
         const referrerId = userData.referredBy;
+        const referralBonusGranted = !!userData.referralPurchaseBonusGranted;
         
-        if (referrerId) {
+        if (referrerId && isFirstPurchase && !referralBonusGranted) {
           // Get referral bonus amount from settings
           let referralBonus = 200; // Default fallback
           try {
@@ -993,6 +982,18 @@ export const productAPI = {
             transactionId: 'REF_PURCHASE_' + Date.now() + '_' + referrerId,
             createdAt: serverTimestamp(),
           });
+
+          // Mark bonus as granted on referred user's profile to avoid repeats
+          // (extra safety on top of the "first purchase" check).
+          try {
+            await updateDoc(userRef, {
+              referralPurchaseBonusGranted: true,
+              referralPurchaseBonusGrantedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } catch (flagError) {
+            console.error('Failed to flag referral bonus as granted:', flagError);
+          }
         }
       }
 

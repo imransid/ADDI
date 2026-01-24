@@ -4,6 +4,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency } from '../utils/currency';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { userAPI } from '../services/api';
 
 /**
  * Enhanced Invitation page with unique referral codes and cool UI
@@ -11,26 +12,38 @@ import { db } from '../config/firebase';
  */
 const Invitation = () => {
   const user = useSelector((state) => state.user);
+  const authUser = useSelector((state) => state.auth.user);
   const { settings } = useSettings();
   const [referralCode, setReferralCode] = useState('');
   const [referralCount, setReferralCount] = useState(0);
+  const [purchasedReferralCount, setPurchasedReferralCount] = useState(0);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const userId = authUser?.id || user?.id;
+  const fallbackCode = userId ? userId.substring(0, 8).toUpperCase() : '';
+  const codeToShare = referralCode || fallbackCode;
 
   // Generate or get referral code from user document
   useEffect(() => {
     loadReferralCode();
-  }, [user]);
+  }, [userId]);
+
+  // Load referral purchase stats (who purchased vs not)
+  useEffect(() => {
+    loadReferralStats();
+  }, [authUser?.id]);
 
   const loadReferralCode = async () => {
-    if (!user?.id) {
+    if (!userId) {
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      const userDoc = await getDoc(doc(db, 'users', user.id));
+      const userDoc = await getDoc(doc(db, 'users', userId));
       if (userDoc.exists()) {
         const userData = userDoc.data();
         
@@ -39,7 +52,7 @@ const Invitation = () => {
         if (!code) {
           // Generate unique referral code (8 characters, alphanumeric)
           code = generateReferralCode();
-          await updateDoc(doc(db, 'users', user.id), {
+          await updateDoc(doc(db, 'users', userId), {
             referralCode: code,
             updatedAt: serverTimestamp(),
           });
@@ -47,16 +60,36 @@ const Invitation = () => {
         
         setReferralCode(code);
         
-        // Count referrals (users referred by this user)
+        // Optional fallback count (stats call will overwrite with live values)
         const referralsCount = userData.totalReferrals || 0;
         setReferralCount(referralsCount);
+      } else {
+        // If something is off, never produce an empty referral link.
+        setReferralCode(fallbackCode);
       }
     } catch (error) {
       console.error('Failed to load referral code:', error);
       // Fallback to user ID if error
-      setReferralCode(user.id.substring(0, 8).toUpperCase());
+      setReferralCode(fallbackCode);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadReferralStats = async () => {
+    // This API reads current user from localStorage; just ensure we have an auth user.
+    if (!authUser?.id) return;
+    try {
+      setLoadingStats(true);
+      const response = await userAPI.getReferralStatistics(null);
+      if (response?.success) {
+        setReferralCount(response.data.totalReferrals || 0);
+        setPurchasedReferralCount(response.data.purchasedCount || 0);
+      }
+    } catch (error) {
+      console.error('Failed to load referral stats:', error);
+    } finally {
+      setLoadingStats(false);
     }
   };
 
@@ -70,10 +103,13 @@ const Invitation = () => {
     return code;
   };
 
-  const referralLink = `${window.location.origin}/register?ref=${referralCode}`;
+  const referralLink = codeToShare
+    ? `${window.location.origin}/register?ref=${encodeURIComponent(codeToShare)}`
+    : `${window.location.origin}/register`;
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(referralCode);
+    if (!codeToShare) return;
+    navigator.clipboard.writeText(codeToShare);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -120,7 +156,7 @@ const Invitation = () => {
             <div>
               <div className="text-2xl font-bold mb-1">🎉 Referral Rewards</div>
               <div className="text-sm text-green-100">
-                New users get {formatCurrency(settings.referralBonus || 200, settings.currency)} bonus, and you get {formatCurrency(settings.referralBonus || 200, settings.currency)} too!
+                You earn {formatCurrency(settings.referralBonus || 200, settings.currency)} when a referred user makes their first product purchase.
               </div>
             </div>
             <div className="text-4xl font-extrabold text-yellow-200">
@@ -132,13 +168,19 @@ const Invitation = () => {
         {/* Referral Stats */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white rounded-2xl p-5 shadow-xl border border-gray-100 text-center">
-            <div className="text-3xl font-bold text-primary mb-1">{referralCount}</div>
+            <div className="text-3xl font-bold text-primary mb-1">
+              {loadingStats ? '...' : referralCount}
+            </div>
             <div className="text-sm text-gray-600">Total Referrals</div>
           </div>
           <div className="bg-white rounded-2xl p-5 shadow-xl border border-gray-100 text-center">
-            <div className="text-3xl font-bold text-green-600 mb-1">{formatCurrency(referralCount * (settings.referralBonus || 200), settings.currency)}</div>
+            <div className="text-3xl font-bold text-green-600 mb-1">
+              {formatCurrency((purchasedReferralCount || 0) * (settings.referralBonus || 200), settings.currency)}
+            </div>
             <div className="text-sm text-gray-600">Total Rewards Earned</div>
-            <div className="text-xs text-gray-400 mt-1">You earned this from referrals</div>
+            <div className="text-xs text-gray-400 mt-1">
+              {loadingStats ? 'Calculating…' : `${purchasedReferralCount} referral purchase(s)`}
+            </div>
           </div>
         </div>
 
@@ -150,7 +192,7 @@ const Invitation = () => {
           <div className="bg-gradient-to-r from-primary/10 to-accent/10 rounded-xl p-6 border-2 border-dashed border-primary/50 relative">
             <div className="text-center">
               <div className="text-4xl font-black text-primary tracking-widest mb-3 select-all">
-                {referralCode || user.id.substring(0, 8).toUpperCase()}
+                {codeToShare || '—'}
               </div>
               <button
                 onClick={handleCopyCode}
@@ -216,7 +258,7 @@ const Invitation = () => {
           <div className="grid grid-cols-3 gap-3">
             <button
               onClick={() => {
-                const text = `Join using my referral code: ${referralCode} and get ${formatCurrency(settings.referralBonus || 200, settings.currency)} bonus! ${referralLink}`;
+                const text = `Join using my referral code: ${codeToShare}. After your first product purchase, I will receive ${formatCurrency(settings.referralBonus || 200, settings.currency)}. ${referralLink}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
               }}
               className="p-4 bg-green-500 text-white rounded-xl font-semibold hover:bg-green-600 transition-colors flex flex-col items-center gap-2"
@@ -226,7 +268,7 @@ const Invitation = () => {
             </button>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(`Join using my referral code: ${referralCode} and get ${formatCurrency(settings.referralBonus || 200, settings.currency)} bonus! ${referralLink}`);
+                navigator.clipboard.writeText(`Join using my referral code: ${codeToShare}. After your first product purchase, I will receive ${formatCurrency(settings.referralBonus || 200, settings.currency)}. ${referralLink}`);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
@@ -240,7 +282,7 @@ const Invitation = () => {
                 if (navigator.share) {
                   navigator.share({
                     title: 'Join with my referral code!',
-                    text: `Join using my referral code: ${referralCode} and get ${formatCurrency(settings.referralBonus || 200, settings.currency)} bonus!`,
+                    text: `Join using my referral code: ${codeToShare}. After your first product purchase, I will receive ${formatCurrency(settings.referralBonus || 200, settings.currency)}.`,
                     url: referralLink,
                   });
                 } else {
@@ -271,11 +313,11 @@ const Invitation = () => {
             </li>
             <li className="flex items-start gap-3">
               <span className="text-primary font-bold text-lg">3.</span>
-              <span>They receive {formatCurrency(settings.referralBonus || 200, settings.currency)} welcome bonus, and you get {formatCurrency(settings.referralBonus || 200, settings.currency)} too!</span>
+              <span>When they make their first product purchase, you receive {formatCurrency(settings.referralBonus || 200, settings.currency)}.</span>
             </li>
             <li className="flex items-start gap-3">
               <span className="text-primary font-bold text-lg">4.</span>
-              <span>Your referral count increases and bonus is added to your wallet automatically!</span>
+              <span>The bonus is added to your wallet automatically after their first purchase.</span>
             </li>
           </ul>
         </div>
