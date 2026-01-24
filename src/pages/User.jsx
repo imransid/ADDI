@@ -202,12 +202,13 @@ const User = () => {
       if (document.visibilityState === 'visible' && auth.isAuthenticated) {
         dispatch(fetchWallet());
         fetchAccountStatus();
+        checkUserPurchases();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [auth.isAuthenticated, dispatch, fetchAccountStatus]);
+  }, [auth.isAuthenticated, dispatch, fetchAccountStatus, checkUserPurchases]);
 
   const handleLogout = async () => {
     if (!confirm('Are you sure you want to logout?')) {
@@ -322,13 +323,17 @@ const User = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="text-lg font-bold">{user.name || 'User'}</div>
-                  {accountStatus ? (
+                  {checkingPurchase ? (
+                    <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span>⏳</span> Checking...
+                    </span>
+                  ) : hasPurchasedProduct ? (
                     <span className="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                       <span>✓</span> Active
                     </span>
                   ) : (
-                    <span className="bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span>⏳</span> Pending
+                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span>🔒</span> Locked
                     </span>
                   )}
                 </div>
@@ -563,32 +568,34 @@ const User = () => {
 
         {/* Account Status Card */}
         <div className={`rounded-2xl p-6 shadow-xl text-white transform hover:scale-[1.02] transition-transform duration-300 ${
-          accountStatus 
-            ? 'bg-gradient-to-br from-green-500 to-emerald-600' 
-            : 'bg-gradient-to-br from-orange-500 to-red-600'
+          !checkingPurchase && hasPurchasedProduct
+            ? 'bg-gradient-to-br from-green-500 to-emerald-600'
+            : 'bg-gradient-to-br from-red-500 to-orange-600'
         }`}>
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <div className="text-sm opacity-90 mb-2 flex items-center gap-2">
-                <span className="text-2xl">{accountStatus ? '✅' : '⏳'}</span>
+                <span className="text-2xl">
+                  {checkingPurchase ? '⏳' : hasPurchasedProduct ? '✅' : '🔒'}
+                </span>
                 <span className="font-semibold">Account Status</span>
               </div>
               <div className="text-3xl font-extrabold mb-2">
-                {accountStatus ? 'Active' : 'Pending Activation'}
+                {checkingPurchase ? 'Checking...' : hasPurchasedProduct ? 'Active' : 'Locked'}
               </div>
-              {!accountStatus && (
+              {!checkingPurchase && !hasPurchasedProduct && (
                 <div className="text-sm text-white/90">
-                  Purchase your first product to activate your account automatically
+                  Purchase at least one product to unlock your account (withdrawal access).
                 </div>
               )}
-              {accountStatus && (
+              {!checkingPurchase && hasPurchasedProduct && (
                 <div className="text-sm text-white/90">
                   Your account is fully active and ready to use
                 </div>
               )}
             </div>
             <div className="text-6xl opacity-30">
-              {accountStatus ? '🎉' : '🔒'}
+              {checkingPurchase ? '⏳' : hasPurchasedProduct ? '🎉' : '🔒'}
             </div>
           </div>
         </div>

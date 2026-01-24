@@ -24,7 +24,7 @@ const AdminPanel = () => {
   const [products, setProducts] = useState([]);
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [productForm, setProductForm] = useState({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
+  const [productForm, setProductForm] = useState({ name: "", price: "", description: "", imageUrl: "", validityDays: "45", earnAmount: "", totalEarning: "" });
   
   // Transactions
   const [transactions, setTransactions] = useState([]);
@@ -218,32 +218,32 @@ const AdminPanel = () => {
     e.preventDefault();
     setLoading(true);
     try {
+      const validityDaysParsed = parseInt(productForm.validityDays, 10);
+      const validityDays =
+        Number.isFinite(validityDaysParsed) && validityDaysParsed > 0 ? validityDaysParsed : 45;
+
+      const payload = {
+        name: productForm.name,
+        price: parseFloat(productForm.price),
+        description: productForm.description,
+        imageUrl: productForm.imageUrl,
+        validityDays,
+        // We now prefer duration-based validity. Keep validateDate cleared.
+        validateDate: null,
+        earnAmount: productForm.earnAmount ? parseFloat(productForm.earnAmount) : 0,
+        totalEarning: productForm.totalEarning ? parseFloat(productForm.totalEarning) : 0,
+      };
+
       if (editingProduct) {
-        await productAPI.updateProduct(null, editingProduct.id, {
-          name: productForm.name,
-          price: parseFloat(productForm.price),
-          description: productForm.description,
-          imageUrl: productForm.imageUrl,
-          validateDate: productForm.validateDate ? new Date(productForm.validateDate) : null,
-          earnAmount: productForm.earnAmount ? parseFloat(productForm.earnAmount) : 0,
-          totalEarning: productForm.totalEarning ? parseFloat(productForm.totalEarning) : 0,
-        });
+        await productAPI.updateProduct(null, editingProduct.id, payload);
         alert("Product updated successfully");
       } else {
-        await productAPI.addProduct(null, {
-          name: productForm.name,
-          price: parseFloat(productForm.price),
-          description: productForm.description,
-          imageUrl: productForm.imageUrl,
-          validateDate: productForm.validateDate ? new Date(productForm.validateDate) : null,
-          earnAmount: productForm.earnAmount ? parseFloat(productForm.earnAmount) : 0,
-          totalEarning: productForm.totalEarning ? parseFloat(productForm.totalEarning) : 0,
-        });
+        await productAPI.addProduct(null, payload);
         alert("Product added successfully");
       }
       setShowProductModal(false);
       setEditingProduct(null);
-      setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
+      setProductForm({ name: "", price: "", description: "", imageUrl: "", validityDays: "45", earnAmount: "", totalEarning: "" });
       await loadProducts();
     } catch (error) {
       alert("Failed to save product: " + error.message);
@@ -284,6 +284,28 @@ const AdminPanel = () => {
     } catch {
       return "N/A";
     }
+  };
+
+  const getProductValidityDays = (product) => {
+    const asNumber = Number(product?.validityDays);
+    if (!Number.isNaN(asNumber) && asNumber > 0) return Math.floor(asNumber);
+
+    // Backward compatibility: derive "days" from validateDate if present
+    if (product?.validateDate) {
+      const now = new Date();
+      const validateDate =
+        product.validateDate?.toDate
+          ? product.validateDate.toDate()
+          : product.validateDate?.toMillis
+            ? new Date(product.validateDate.toMillis())
+            : new Date(product.validateDate);
+      if (!Number.isNaN(validateDate?.getTime?.())) {
+        const msPerDay = 1000 * 60 * 60 * 24;
+        return Math.max(0, Math.ceil((validateDate - now) / msPerDay));
+      }
+    }
+
+    return null;
   };
 
   // Calculate totals
@@ -564,18 +586,12 @@ const AdminPanel = () => {
                   <button
                     onClick={() => {
                       setEditingProduct(null);
-                      // Auto-set validation date to 45 days from today
-                      const today = new Date();
-                      const expiryDate = new Date(today);
-                      expiryDate.setDate(today.getDate() + 45);
-                      const expiryDateStr = expiryDate.toISOString().split('T')[0];
-                      
                       setProductForm({ 
                         name: "", 
                         price: "", 
                         description: "", 
                         imageUrl: "", 
-                        validateDate: expiryDateStr, 
+                        validityDays: "45",
                         earnAmount: "", 
                         totalEarning: "" 
                       });
@@ -596,26 +612,23 @@ const AdminPanel = () => {
                       <p className="text-green-400 text-lg font-bold mb-2">
                         ${product.price}
                       </p>
+                      <p className="text-gray-400 text-sm mb-2">
+                        Validity: {getProductValidityDays(product) !== null ? `${getProductValidityDays(product)} days` : "—"}
+                      </p>
                       {product.description && (
                         <p className="text-gray-400 text-sm mb-3">{product.description}</p>
                       )}
                       <button
                         onClick={() => {
                           setEditingProduct(product);
-                          // Format validateDate for input (YYYY-MM-DD)
-                          const validateDate = product.validateDate 
-                            ? (product.validateDate.toDate ? product.validateDate.toDate() : new Date(product.validateDate))
-                            : null;
-                          const validateDateStr = validateDate 
-                            ? validateDate.toISOString().split('T')[0]
-                            : "";
+                          const validityDays = getProductValidityDays(product);
                           
                           setProductForm({
                             name: product.name,
                             price: product.price.toString(),
                             description: product.description || "",
                             imageUrl: product.imageUrl || "",
-                            validateDate: validateDateStr,
+                            validityDays: validityDays !== null ? validityDays.toString() : "45",
                             earnAmount: (product.earnAmount || 0).toString(),
                             totalEarning: (product.totalEarning || 0).toString(),
                           });
@@ -1122,20 +1135,20 @@ const AdminPanel = () => {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Validation Date (Product Expiry)</label>
+                <label className="block text-sm font-medium mb-2">Validity (Days)</label>
                 <input
-                  type="date"
-                  value={productForm.validateDate}
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={productForm.validityDays}
                   onChange={(e) =>
-                    setProductForm({ ...productForm, validateDate: e.target.value })
+                    setProductForm({ ...productForm, validityDays: e.target.value })
                   }
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
                   required
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  {editingProduct 
-                    ? "Product will expire after this date" 
-                    : "Auto-set to 45 days from today. Product will expire after this date"}
+                  Default is 45 days. Users get this many days of validity after purchase.
                 </p>
               </div>
               <div className="mb-4">
@@ -1180,7 +1193,7 @@ const AdminPanel = () => {
                   onClick={() => {
                     setShowProductModal(false);
                     setEditingProduct(null);
-                    setProductForm({ name: "", price: "", description: "", imageUrl: "", validateDate: "", earnAmount: "", totalEarning: "" });
+                    setProductForm({ name: "", price: "", description: "", imageUrl: "", validityDays: "45", earnAmount: "", totalEarning: "" });
                   }}
                   className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
                 >

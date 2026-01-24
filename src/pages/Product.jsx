@@ -20,6 +20,28 @@ const Product = () => {
   const [error, setError] = useState(null);
   const [purchasing, setPurchasing] = useState({});
 
+  const getValidityDays = (product) => {
+    const asNumber = Number(product?.validityDays);
+    if (!Number.isNaN(asNumber) && asNumber > 0) return Math.floor(asNumber);
+
+    // Backward compatibility: derive "days" from validateDate if present
+    if (product?.validateDate) {
+      const now = new Date();
+      const validateDate =
+        product.validateDate?.toDate
+          ? product.validateDate.toDate()
+          : product.validateDate?.toMillis
+            ? new Date(product.validateDate.toMillis())
+            : new Date(product.validateDate);
+      if (!Number.isNaN(validateDate?.getTime?.())) {
+        const msPerDay = 1000 * 60 * 60 * 24;
+        return Math.max(0, Math.ceil((validateDate - now) / msPerDay));
+      }
+    }
+
+    return null;
+  };
+
   useEffect(() => {
     loadProducts();
     // Refresh wallet to show current balance
@@ -164,11 +186,14 @@ const Product = () => {
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {products.map((product) => (
-              <div
-                key={product.id}
-                className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden flex flex-col transform hover:-translate-y-1 border border-gray-100"
-              >
+            {products.map((product) => {
+              const validityDays = getValidityDays(product);
+
+              return (
+                <div
+                  key={product.id}
+                  className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden flex flex-col transform hover:-translate-y-1 border border-gray-100"
+                >
                 {/* Premium Image Section */}
                 <div className="relative h-48 w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
                   {product.imageUrl ? (
@@ -227,6 +252,17 @@ const Product = () => {
                         </span>
                       </div>
                     </div>
+
+                    {validityDays !== null && (
+                      <div className="mb-4">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-2xl text-gray-500">Validity:</span>
+                          <span className="text-2xl font-bold text-primary">
+                            {validityDays} days
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     {product.earnAmount > 0 && (
                       <div className="mb-4">
@@ -296,7 +332,8 @@ const Product = () => {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

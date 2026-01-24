@@ -736,11 +736,20 @@ export const productAPI = {
   addProduct: async (token, productData) => {
     try {
       const productsRef = collection(db, 'products');
+      const validityDaysNumber = Number(productData.validityDays);
+      let validityDays =
+        !Number.isNaN(validityDaysNumber) && validityDaysNumber > 0
+          ? Math.floor(validityDaysNumber)
+          : null;
+      if (!validityDays && !productData.validateDate) validityDays = 45;
+
       const productDoc = {
         name: productData.name,
         price: productData.price,
         description: productData.description || '',
         imageUrl: productData.imageUrl || '',
+        // Prefer validityDays (duration). validateDate is kept for backward compatibility.
+        validityDays: validityDays,
         validateDate: productData.validateDate || null,
         earnAmount: productData.earnAmount || 0,
         totalEarning: productData.totalEarning || 0,
@@ -868,13 +877,32 @@ export const productAPI = {
       }
 
       // Create user product purchase record
-      // Handle validateDate - if it's a Firestore Timestamp, keep it; if it's a Date, convert to Timestamp
+      // Handle validateDate (legacy) and validityDays (preferred duration)
+      const nowDate = new Date();
+      const msPerDay = 1000 * 60 * 60 * 24;
+
       let validateDateValue = null;
+      let derivedValidityDays = null;
+
       if (productData.validateDate) {
         // If it's already a Firestore Timestamp, use it directly
         // If it's a Date object, Firestore will convert it automatically
         validateDateValue = productData.validateDate;
+
+        // Also derive a validityDays value for UI (used/total display)
+        const validateDateAsDate = productData.validateDate?.toMillis
+          ? new Date(productData.validateDate.toMillis())
+          : new Date(productData.validateDate);
+        if (!Number.isNaN(validateDateAsDate?.getTime?.())) {
+          derivedValidityDays = Math.max(0, Math.ceil((validateDateAsDate - nowDate) / msPerDay));
+        }
       }
+
+      const validityDaysNumber = Number(productData.validityDays);
+      const validityDays =
+        !Number.isNaN(validityDaysNumber) && validityDaysNumber > 0
+          ? Math.floor(validityDaysNumber)
+          : (derivedValidityDays ?? 48);
 
       const purchaseRef = await addDoc(collection(db, 'userProducts'), {
         userId: user.id,
@@ -885,7 +913,8 @@ export const productAPI = {
         imageUrl: productData.imageUrl || '', // Product image URL
         purchaseDate: serverTimestamp(),
         status: 'active', // active, expired
-        validateDate: validateDateValue, // Validation date from product
+        validateDate: validateDateValue, // Optional legacy absolute expiry date
+        validityDays: validityDays, // Preferred validity duration (days)
         earnAmount: productData.earnAmount || 0, // Daily earn amount from product
         lastEarnAttempt: null, // Track last earn attempt time
         totalEarnings: 0,
