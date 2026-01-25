@@ -1145,10 +1145,9 @@ const AdminPanel = () => {
                     setProductForm({ ...productForm, validityDays: e.target.value })
                   }
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                  required
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Default is 45 days. Users get this many days of validity after purchase.
+                  Default is 45 days. If you leave it empty, it will save as 45 days.
                 </p>
               </div>
               <div className="mb-4">

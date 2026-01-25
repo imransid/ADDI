@@ -6,6 +6,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { walletAPI } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency, getCurrencySymbol } from '../utils/currency';
+import defaultBikashQrJpeg from '../assets/default-bikash-qr.jpeg';
 
 // Component to display default Bikash QR code image
 const DefaultBikashQR = ({ size = 220 }) => {
@@ -15,6 +16,8 @@ const DefaultBikashQR = ({ size = 220 }) => {
   useEffect(() => {
     // Try different image formats and paths
     const imagePaths = [
+      // Prefer bundled asset so Vercel deploys the updated image from `src/assets/`
+      defaultBikashQrJpeg,
       '/assets/default-bikash-qr.png',
       '/assets/default-bikash-qr.jpg',
       '/assets/default-bikash-qr.jpeg',

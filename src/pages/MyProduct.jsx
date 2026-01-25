@@ -152,7 +152,7 @@ const MyProduct = () => {
       const used = product.validityDays - product.daysRemaining;
       return `${used}/${product.validityDays}`;
     }
-    return "0/48";
+    return "0/45";
   };
 
   const handleReceive = async (productId) => {

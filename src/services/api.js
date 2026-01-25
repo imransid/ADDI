@@ -902,7 +902,7 @@ export const productAPI = {
       const validityDays =
         !Number.isNaN(validityDaysNumber) && validityDaysNumber > 0
           ? Math.floor(validityDaysNumber)
-          : (derivedValidityDays ?? 48);
+          : (derivedValidityDays ?? 45);
 
       const purchaseRef = await addDoc(collection(db, 'userProducts'), {
         userId: user.id,
@@ -1097,7 +1097,7 @@ export const productAPI = {
         } else {
           // Fallback to old validityDays logic
           const purchaseDate = product.purchaseDate?.toMillis ? new Date(product.purchaseDate.toMillis()) : new Date(product.purchaseDate);
-          const validityDays = product.validityDays || 48;
+          const validityDays = product.validityDays || 45;
           expiryDate = new Date(purchaseDate);
           expiryDate.setDate(expiryDate.getDate() + validityDays);
         }
@@ -1163,7 +1163,7 @@ export const productAPI = {
           : new Date(userProduct.validateDate);
       } else {
         const purchaseDate = userProduct.purchaseDate?.toMillis ? new Date(userProduct.purchaseDate.toMillis()) : new Date(userProduct.purchaseDate);
-        const validityDays = userProduct.validityDays || 48;
+        const validityDays = userProduct.validityDays || 45;
         expiryDate = new Date(purchaseDate);
         expiryDate.setDate(expiryDate.getDate() + validityDays);
       }
