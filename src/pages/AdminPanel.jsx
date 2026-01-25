@@ -769,9 +769,13 @@ const AdminPanel = () => {
                               <span className={`px-2 py-1 rounded text-xs font-medium ${
                                 withdrawal.paymentMethod === 'bikash'
                                   ? 'bg-green-900 text-green-300'
+                                  : withdrawal.paymentMethod === 'touchngo'
+                                  ? 'bg-blue-900 text-blue-300'
                                   : 'bg-orange-900 text-orange-300'
                               }`}>
-                                {withdrawal.paymentMethod.toUpperCase()}
+                                {withdrawal.paymentMethod === 'touchngo'
+                                  ? "TOUCH 'N GO"
+                                  : withdrawal.paymentMethod.toUpperCase()}
                               </span>
                             ) : (
                               <span className="text-gray-500 text-xs">N/A</span>

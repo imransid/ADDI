@@ -9,7 +9,7 @@ import { db } from '../config/firebase';
 import { userAPI, productAPI } from '../services/api';
 
 /**
- * Enhanced Withdraw page with BIKASH support
+ * Enhanced Withdraw page with BIKASH + Touch 'n Go support
  * Users can add and manage their payment method details
  */
 const Withdraw = () => {
@@ -20,16 +20,22 @@ const Withdraw = () => {
   const { user } = useSelector((state) => state.auth);
   const { settings } = useSettings();
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('bikash');
+  const [paymentMethod, setPaymentMethod] = useState('bikash'); // 'bikash' | 'touchngo'
   const [showAddMethod, setShowAddMethod] = useState(false);
   const [editingMethod, setEditingMethod] = useState(null);
   const [paymentDetails, setPaymentDetails] = useState({
     bikash: { number: '', name: '' },
+    touchngo: { number: '', name: '' },
   });
   const [formData, setFormData] = useState({ number: '', name: '' });
   const [loadingDetails, setLoadingDetails] = useState(true);
   const [hasPurchasedProduct, setHasPurchasedProduct] = useState(false);
   const [checkingPurchase, setCheckingPurchase] = useState(true);
+
+  const getMethodLabel = (method) => {
+    if (method === 'touchngo') return "Touch 'n Go";
+    return 'BIKASH';
+  };
 
   // Load user payment details and check if user has purchased any product
   useEffect(() => {
@@ -50,6 +56,7 @@ const Withdraw = () => {
         const userData = userDoc.data();
         setPaymentDetails({
           bikash: userData.bikash || { number: '', name: '' },
+          touchngo: userData.touchngo || { number: '', name: '' },
         });
       }
     } catch (error) {
@@ -115,9 +122,9 @@ const Withdraw = () => {
       setShowAddMethod(false);
       setEditingMethod(null);
       setFormData({ number: '', name: '' });
-      alert(`${method.toUpperCase()} details saved successfully!`);
+      alert(`${getMethodLabel(method)} details saved successfully!`);
     } catch (error) {
-      alert(`Failed to save ${editingMethod || paymentMethod} details: ${error.message}`);
+      alert(`Failed to save ${getMethodLabel(editingMethod || paymentMethod)} details: ${error.message}`);
     }
   };
 
@@ -144,7 +151,7 @@ const Withdraw = () => {
     // Check if payment method is configured
     const selectedDetails = paymentDetails[paymentMethod];
     if (!selectedDetails?.number || !selectedDetails?.name) {
-      alert(`Please add your ${paymentMethod.toUpperCase()} details first`);
+      alert(`Please add your ${getMethodLabel(paymentMethod)} details first`);
       setShowAddMethod(true);
       setEditingMethod(paymentMethod);
       return;
@@ -216,7 +223,7 @@ const Withdraw = () => {
         <div className="relative z-10 text-center">
           <div className="text-4xl mb-2">💸</div>
           <h1 className="text-3xl font-bold tracking-wide">Withdraw Funds</h1>
-          <p className="text-white/90 text-sm mt-2">Withdraw to BIKASH</p>
+          <p className="text-white/90 text-sm mt-2">Withdraw to {getMethodLabel(paymentMethod)}</p>
         </div>
       </div>
 
@@ -302,14 +309,42 @@ const Withdraw = () => {
           <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
             <span>💳</span> Payment Method
           </h2>
-          <div className="p-4 rounded-xl border-2 border-green-500 bg-green-50 shadow-lg">
-            <div className="text-3xl mb-2">📱</div>
-            <div className="font-semibold text-green-600">
-              BIKASH
-            </div>
-            {currentMethod?.number && (
-              <div className="text-xs text-gray-500 mt-1">{currentMethod.number}</div>
-            )}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('bikash')}
+              className={`p-4 rounded-xl border-2 shadow-lg text-left transition-all ${
+                paymentMethod === 'bikash'
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-200 bg-white hover:bg-gray-50'
+              }`}
+            >
+              <div className="text-3xl mb-2">📱</div>
+              <div className={`font-semibold ${paymentMethod === 'bikash' ? 'text-green-600' : 'text-gray-700'}`}>
+                BIKASH
+              </div>
+              {paymentDetails.bikash?.number && (
+                <div className="text-xs text-gray-500 mt-1">{paymentDetails.bikash.number}</div>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('touchngo')}
+              className={`p-4 rounded-xl border-2 shadow-lg text-left transition-all ${
+                paymentMethod === 'touchngo'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 bg-white hover:bg-gray-50'
+              }`}
+            >
+              <div className="text-3xl mb-2">🧾</div>
+              <div className={`font-semibold ${paymentMethod === 'touchngo' ? 'text-blue-700' : 'text-gray-700'}`}>
+                Touch 'n Go
+              </div>
+              {paymentDetails.touchngo?.number && (
+                <div className="text-xs text-gray-500 mt-1">{paymentDetails.touchngo.number}</div>
+              )}
+            </button>
           </div>
         </div>
 
@@ -318,7 +353,7 @@ const Withdraw = () => {
           <div className="bg-white rounded-2xl p-6 shadow-xl border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <span>✅</span> {paymentMethod.toUpperCase()} Details
+                <span>✅</span> {getMethodLabel(paymentMethod)} Details
               </h2>
               <button
                 onClick={() => handleEditMethod(paymentMethod)}
@@ -343,13 +378,13 @@ const Withdraw = () => {
             <div className="flex items-start gap-3">
               <span className="text-2xl">⚠️</span>
               <div className="flex-1">
-                <h3 className="font-bold text-yellow-800 mb-1">No {paymentMethod.toUpperCase()} Details</h3>
-                <p className="text-sm text-yellow-700 mb-3">Please add your {paymentMethod.toUpperCase()} account details to withdraw.</p>
+                <h3 className="font-bold text-yellow-800 mb-1">No {getMethodLabel(paymentMethod)} Details</h3>
+                <p className="text-sm text-yellow-700 mb-3">Please add your {getMethodLabel(paymentMethod)} account details to withdraw.</p>
                 <button
                   onClick={() => handleAddMethod()}
                   className="bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors"
                 >
-                  Add {paymentMethod.toUpperCase()} Details
+                  Add {getMethodLabel(paymentMethod)} Details
                 </button>
               </div>
             </div>
@@ -361,7 +396,7 @@ const Withdraw = () => {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl animate-fadeIn">
               <h2 className="text-xl font-bold text-gray-800 mb-4">
-                {editingMethod ? 'Edit' : 'Add'} {paymentMethod.toUpperCase()} Details
+                {editingMethod ? 'Edit' : 'Add'} {getMethodLabel(editingMethod || paymentMethod)} Details
               </h2>
               <div className="space-y-4">
                 <div>
@@ -380,7 +415,7 @@ const Withdraw = () => {
                     type="text"
                     value={formData.number}
                     onChange={(e) => setFormData({ ...formData, number: e.target.value })}
-                    placeholder={`Enter ${paymentMethod.toUpperCase()} number`}
+                    placeholder={`Enter ${getMethodLabel(editingMethod || paymentMethod)} number`}
                     className="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
                   />
                 </div>
@@ -490,7 +525,7 @@ const Withdraw = () => {
                 Processing...
               </span>
             ) : (
-              `Withdraw to ${paymentMethod.toUpperCase()}`
+              `Withdraw to ${getMethodLabel(paymentMethod)}`
             )}
           </button>
         </form>
