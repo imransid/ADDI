@@ -22,9 +22,9 @@ export const loginUser = createAsyncThunk(
 
 export const registerUser = createAsyncThunk(
   'auth/register',
-  async ({ name, phone, password, nid, passport = null, referralCode = null }, { rejectWithValue }) => {
+  async ({ name, phone, password, referralCode = null }, { rejectWithValue }) => {
     try {
-      const response = await authAPI.register(name, phone, password, nid, passport, referralCode);
+      const response = await authAPI.register(name, phone, password, referralCode);
       if (response.success) {
         // Store token in localStorage
         localStorage.setItem('token', response.data.token);

@@ -31,11 +31,11 @@ export const VIP_THRESHOLDS = {
 
 export const VIP_REWARDS = {
   [VIP_LEVELS.VIP1]: {
-    weekly: 50,  // 50 money per week
+    weekly: 5,  // 5 money per week
     monthly: 0,  // No monthly reward
   },
   [VIP_LEVELS.VIP2]: {
-    weekly: 50,   // 50 money per week
+    weekly: 5,   // 5 money per week
     monthly: 2000, // 2000 money per month
   },
 };

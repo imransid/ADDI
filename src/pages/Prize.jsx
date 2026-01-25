@@ -26,9 +26,9 @@ const Prize = () => {
   const prizes = [
     { amount: 5, type: 'bonus', probability: 30 },
     { amount: 10, type: 'bonus', probability: 25 },
-    { amount: 20, type: 'bonus', probability: 20 },
-    { amount: 50, type: 'bonus', probability: 15 },
-    { amount: 100, type: 'mega bonus', probability: 5 },
+    { amount: 15, type: 'bonus', probability: 20 },
+    { amount: 20, type: 'bonus', probability: 15 },
+    { amount: 25, type: 'bonus', probability: 5 },
     { amount: 0, type: 'try again', probability: 5 },
   ];
 
@@ -443,7 +443,7 @@ const Prize = () => {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-yellow-500 font-bold">•</span>
-              <span>Win amazing bonuses ranging from {formatCurrency(5, settings.currency)} to {formatCurrency(100, settings.currency)}</span>
+              <span>Win amazing bonuses ranging from {formatCurrency(5, settings.currency)} to {formatCurrency(25, settings.currency)}</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-yellow-500 font-bold">•</span>

@@ -96,7 +96,7 @@ export const authAPI = {
     }
   },
 
-  register: async (name, phone, password, nid, passport = null, referralCode = null) => {
+  register: async (name, phone, password, referralCode = null) => {
     try {
       // Check if user already exists by phone
       const usersRef = collection(db, 'users');
@@ -105,24 +105,6 @@ export const authAPI = {
 
       if (!querySnapshot.empty) {
         throw new Error('Phone number already registered');
-      }
-
-      // Check if NID already exists (if provided)
-      if (nid) {
-        const nidQuery = query(usersRef, where('nid', '==', nid));
-        const nidSnapshot = await getDocs(nidQuery);
-        if (!nidSnapshot.empty) {
-          throw new Error('NID already registered');
-        }
-      }
-
-      // Check if Passport already exists (if provided)
-      if (passport) {
-        const passportQuery = query(usersRef, where('passport', '==', passport));
-        const passportSnapshot = await getDocs(passportQuery);
-        if (!passportSnapshot.empty) {
-          throw new Error('Passport already registered');
-        }
       }
 
       // Generate unique referral code for new user (8 characters)
@@ -165,8 +147,6 @@ export const authAPI = {
         name,
         phone,
         password: hashedPassword,
-        nid: nid || null,
-        passport: passport || null,
         role: 'consumer',
         isActive: true, // Consumers are automatically approved on sign up
         referralCode: newReferralCode,

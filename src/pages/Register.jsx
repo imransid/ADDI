@@ -7,7 +7,7 @@ import { formatCurrency } from '../utils/currency';
 
 /**
  * Register page with modern design
- * Fields: Name, Phone Number, Password, NID
+ * Fields: Name, Phone Number, Password
  */
 const Register = () => {
   const navigate = useNavigate();
@@ -16,13 +16,10 @@ const Register = () => {
   const { isAuthenticated, loading, error } = useSelector((state) => state.auth);
   const { settings } = useSettings();
   
-  const [idType, setIdType] = useState('nid'); // 'nid' or 'passport'
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     password: '',
-    nid: '',
-    passport: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
@@ -72,19 +69,6 @@ const Register = () => {
     }
   };
 
-  const handleIdTypeChange = (e) => {
-    const newIdType = e.target.value;
-    setIdType(newIdType);
-    // Clear the other ID field and its error when switching
-    if (newIdType === 'nid') {
-      setFormData((prev) => ({ ...prev, passport: '' }));
-      setErrors((prev) => ({ ...prev, passport: '', idNumber: '' }));
-    } else {
-      setFormData((prev) => ({ ...prev, nid: '' }));
-      setErrors((prev) => ({ ...prev, nid: '', idNumber: '' }));
-    }
-  };
-
   const validateForm = () => {
     const newErrors = {};
 
@@ -106,12 +90,6 @@ const Register = () => {
       newErrors.password = 'Password must be at least 6 characters';
     }
 
-    // Validate the selected ID type (NID or Passport)
-    const idNumber = idType === 'nid' ? formData.nid : formData.passport;
-    if (!idNumber.trim()) {
-      newErrors.idNumber = `${idType === 'nid' ? 'NID' : 'Passport'} is required`;
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -125,8 +103,6 @@ const Register = () => {
             name: formData.name,
             phone: formData.phone,
             password: formData.password,
-            nid: formData.nid || null,
-            passport: formData.passport || null,
             referralCode: referralCode || null,
           })
         ).unwrap();
@@ -321,96 +297,6 @@ const Register = () => {
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password}</p>
               )}
-            </div>
-
-            {/* ID Type Selection Dropdown and Input */}
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="idType" className="block text-sm font-medium text-gray-700 mb-2">
-                  ID Type <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-                    <svg
-                      className="h-5 w-5 text-gray-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                    </svg>
-                  </div>
-                  <select
-                    id="idType"
-                    name="idType"
-                    value={idType}
-                    onChange={handleIdTypeChange}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none bg-white"
-                  >
-                    <option value="nid">NID (National ID)</option>
-                    <option value="passport">Passport Number</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <svg
-                      className="h-5 w-5 text-gray-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic ID Number Input */}
-              <div>
-                <label htmlFor="idNumber" className="block text-sm font-medium text-gray-700 mb-2">
-                  {idType === 'nid' ? 'NID Number' : 'Passport Number'} <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    {idType === 'nid' ? (
-                      <svg
-                        className="h-5 w-5 text-gray-400"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                      </svg>
-                    ) : (
-                      <svg
-                        className="h-5 w-5 text-gray-400"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                      </svg>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    id="idNumber"
-                    name={idType}
-                    value={idType === 'nid' ? formData.nid : formData.passport}
-                    onChange={handleChange}
-                    placeholder={idType === 'nid' ? 'Enter your NID number' : 'Enter your Passport number'}
-                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
-                      errors.idNumber ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    required
-                  />
-                </div>
-                {errors.idNumber && (
-                  <p className="mt-1 text-sm text-red-600">{errors.idNumber}</p>
-                )}
-              </div>
             </div>
 
             {/* Error message from Redux */}

@@ -321,7 +321,7 @@ const Home = () => {
                   <div className="space-y-1.5 text-xs">
                     <div className="flex items-center gap-2">
                       <span>✅</span>
-                      <span>Weekly reward: {formatCurrency(50, settings.currency)}</span>
+                      <span>Weekly reward: {formatCurrency(5, settings.currency)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span>✅</span>
@@ -329,7 +329,7 @@ const Home = () => {
                     </div>
                     <div className="flex items-center gap-2 text-white/70">
                       <span>🔒</span>
-                      <span>VIP 2: {formatCurrency(50, settings.currency)} weekly + {formatCurrency(2000, settings.currency)} monthly</span>
+                      <span>VIP 2: {formatCurrency(5, settings.currency)} weekly + {formatCurrency(2000, settings.currency)} monthly</span>
                     </div>
                   </div>
                   <button
