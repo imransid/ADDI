@@ -6,7 +6,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency, getCurrencySymbol } from '../utils/currency';
 import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { userAPI, productAPI } from '../services/api';
+import { userAPI, productAPI, walletAPI } from '../services/api';
 
 /**
  * Enhanced Withdraw page with BIKASH + Touch 'n Go support
@@ -31,6 +31,8 @@ const Withdraw = () => {
   const [loadingDetails, setLoadingDetails] = useState(true);
   const [hasPurchasedProduct, setHasPurchasedProduct] = useState(false);
   const [checkingPurchase, setCheckingPurchase] = useState(true);
+  const [withdrawalHistory, setWithdrawalHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
   const getMethodLabel = (method) => {
     if (method === 'touchngo') return "Touch 'n Go";
@@ -41,6 +43,7 @@ const Withdraw = () => {
   useEffect(() => {
     loadPaymentDetails();
     checkUserPurchases();
+    loadWithdrawalHistory();
   }, [user]);
 
   const loadPaymentDetails = async () => {
@@ -84,6 +87,56 @@ const Withdraw = () => {
       setHasPurchasedProduct(false);
     } finally {
       setCheckingPurchase(false);
+    }
+  };
+
+  const loadWithdrawalHistory = async () => {
+    if (!user) {
+      setLoadingHistory(false);
+      return;
+    }
+
+    try {
+      setLoadingHistory(true);
+      const response = await walletAPI.getWithdrawalHistory(null);
+      if (response.success) {
+        setWithdrawalHistory(response.data.withdrawals || []);
+      }
+    } catch (error) {
+      console.error('Failed to load withdrawal history:', error);
+      setWithdrawalHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds * 1000);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (error) {
+      return 'Invalid Date';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'approved':
+      case 'completed':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'rejected':
+      case 'cancelled':
+        return 'bg-red-100 text-red-800 border-red-300';
+      case 'pending':
+      default:
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
     }
   };
 
@@ -182,6 +235,8 @@ const Withdraw = () => {
         `VAT (10%): ${formatCurrency(vatTax, settings.currency)}\n` +
         `You will receive: ${formatCurrency(netAmount, settings.currency)}`);
       setAmount('');
+      // Reload withdrawal history after successful withdrawal
+      await loadWithdrawalHistory();
       navigate('/');
     } catch (err) {
       alert(`Withdrawal failed: ${err}`);
@@ -529,6 +584,83 @@ const Withdraw = () => {
             )}
           </button>
         </form>
+
+        {/* Withdrawal History Section */}
+        <div className="bg-white rounded-2xl p-6 shadow-xl border border-gray-100">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span>📋</span> Withdrawal History
+          </h2>
+          
+          {loadingHistory ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="inline-flex items-center justify-center w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+              <span className="ml-3 text-gray-600">Loading history...</span>
+            </div>
+          ) : withdrawalHistory.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-2">📭</div>
+              <p className="text-gray-500 text-sm">No withdrawal history found</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {withdrawalHistory.map((withdrawal) => (
+                <div
+                  key={withdrawal.id}
+                  className="border-2 border-gray-200 rounded-xl p-4 hover:border-primary/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-semibold text-gray-700">
+                          {formatCurrency(withdrawal.amount || 0, settings.currency)}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(withdrawal.status)}`}>
+                          {withdrawal.status?.toUpperCase() || 'PENDING'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">{formatDate(withdrawal.createdAt)}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-gray-500 mb-1">You'll receive:</div>
+                      <div className="text-sm font-bold text-green-600">
+                        {formatCurrency(withdrawal.netAmount || (withdrawal.amount - (withdrawal.vatTax || 0)), settings.currency)}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-100">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">VAT Tax (10%)</p>
+                      <p className="text-xs font-semibold text-red-600">
+                        -{formatCurrency(withdrawal.vatTax || 0, settings.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Payment Method</p>
+                      <p className="text-xs font-semibold text-gray-700">
+                        {withdrawal.paymentMethod === 'touchngo' ? "Touch 'n Go" : withdrawal.paymentMethod === 'bikash' ? 'BIKASH' : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {withdrawal.paymentNumber && (
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <p className="text-xs text-gray-500">
+                        To: {withdrawal.paymentName || 'N/A'} ({withdrawal.paymentNumber})
+                      </p>
+                    </div>
+                  )}
+                  
+                  {withdrawal.transactionId && (
+                    <div className="mt-2">
+                      <p className="text-xs text-gray-400">Transaction ID: {withdrawal.transactionId}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <style>{`

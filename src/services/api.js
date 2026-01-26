@@ -588,6 +588,41 @@ export const walletAPI = {
       throw new Error(error.message || 'Withdrawal failed');
     }
   },
+
+  getWithdrawalHistory: async (token) => {
+    try {
+      const userStr = localStorage.getItem('user');
+      if (!userStr) throw new Error('User not found');
+
+      const user = JSON.parse(userStr);
+      const transactionsRef = collection(db, 'transactions');
+      const q = query(
+        transactionsRef,
+        where('userId', '==', user.id),
+        where('type', '==', 'withdraw')
+      );
+      const querySnapshot = await getDocs(q);
+
+      let withdrawals = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Sort by createdAt descending (most recent first)
+      withdrawals.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+        const timeB = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+        return timeB - timeA;
+      });
+
+      return {
+        success: true,
+        data: { withdrawals },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch withdrawal history');
+    }
+  },
 };
 
 // Team API
