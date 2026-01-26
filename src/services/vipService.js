@@ -14,8 +14,8 @@ import {
   query,
   where,
   getDocs,
-} from 'firebase/firestore';
-import { db } from '../config/firebase';
+} from "firebase/firestore";
+import { db } from "../config/firebase";
 
 // VIP Level Thresholds
 export const VIP_LEVELS = {
@@ -25,18 +25,18 @@ export const VIP_LEVELS = {
 };
 
 export const VIP_THRESHOLDS = {
-  [VIP_LEVELS.VIP1]: 5,  // 5 referrals for VIP 1
+  [VIP_LEVELS.VIP1]: 5, // 5 referrals for VIP 1
   [VIP_LEVELS.VIP2]: 20, // 20 referrals for VIP 2
 };
 
 export const VIP_REWARDS = {
   [VIP_LEVELS.VIP1]: {
-    weekly: 5,  // 5 money per week
-    monthly: 0,  // No monthly reward
+    weekly: 5, // 5 money per week
+    monthly: 0, // No monthly reward
   },
   [VIP_LEVELS.VIP2]: {
-    weekly: 5,   // 5 money per week
-    monthly: 2000, // 2000 money per month
+    weekly: 5, // 5 money per week
+    monthly: 20, // 2000 money per month
   },
 };
 
@@ -58,11 +58,11 @@ export const calculateVIPLevel = (referralCount) => {
 export const getVIPLevelName = (level) => {
   switch (level) {
     case VIP_LEVELS.VIP1:
-      return 'VIP 1';
+      return "VIP 1";
     case VIP_LEVELS.VIP2:
-      return 'VIP 2';
+      return "VIP 2";
     default:
-      return 'Regular';
+      return "Regular";
   }
 };
 
@@ -72,11 +72,11 @@ export const getVIPLevelName = (level) => {
  */
 export const updateVIPLevel = async (userId) => {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userRef = doc(db, "users", userId);
     const userDoc = await getDoc(userRef);
 
     if (!userDoc.exists()) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     const userData = userDoc.data();
@@ -108,7 +108,7 @@ export const updateVIPLevel = async (userId) => {
       changed: false,
     };
   } catch (error) {
-    console.error('Error updating VIP level:', error);
+    console.error("Error updating VIP level:", error);
     throw error;
   }
 };
@@ -119,11 +119,11 @@ export const updateVIPLevel = async (userId) => {
  */
 export const distributeWeeklyVIPReward = async (userId) => {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userRef = doc(db, "users", userId);
     const userDoc = await getDoc(userRef);
 
     if (!userDoc.exists()) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     const userData = userDoc.data();
@@ -133,7 +133,7 @@ export const distributeWeeklyVIPReward = async (userId) => {
     if (vipLevel === VIP_LEVELS.NONE) {
       return {
         success: false,
-        message: 'User is not a VIP member',
+        message: "User is not a VIP member",
       };
     }
 
@@ -142,7 +142,7 @@ export const distributeWeeklyVIPReward = async (userId) => {
     if (rewardAmount <= 0) {
       return {
         success: false,
-        message: 'No weekly reward for this VIP level',
+        message: "No weekly reward for this VIP level",
       };
     }
 
@@ -158,7 +158,10 @@ export const distributeWeeklyVIPReward = async (userId) => {
         : new Date(lastWeeklyReward);
 
       if (lastRewardDate > oneWeekAgo) {
-        const daysUntilNext = Math.ceil((lastRewardDate.getTime() + 7 * 24 * 60 * 60 * 1000 - now.getTime()) / (24 * 60 * 60 * 1000));
+        const daysUntilNext = Math.ceil(
+          (lastRewardDate.getTime() + 7 * 24 * 60 * 60 * 1000 - now.getTime()) /
+            (24 * 60 * 60 * 1000),
+        );
         return {
           success: false,
           message: `Weekly reward already received. Next reward in ${daysUntilNext} days.`,
@@ -168,7 +171,7 @@ export const distributeWeeklyVIPReward = async (userId) => {
     }
 
     // Get or create wallet
-    const walletRef = doc(db, 'wallets', userId);
+    const walletRef = doc(db, "wallets", userId);
     const walletDoc = await getDoc(walletRef);
 
     if (!walletDoc.exists()) {
@@ -202,14 +205,14 @@ export const distributeWeeklyVIPReward = async (userId) => {
     });
 
     // Create transaction record
-    await addDoc(collection(db, 'transactions'), {
+    await addDoc(collection(db, "transactions"), {
       userId,
-      type: 'vip_weekly_reward',
+      type: "vip_weekly_reward",
       amount: rewardAmount,
-      status: 'completed',
+      status: "completed",
       vipLevel,
       description: `VIP ${vipLevel} Weekly Reward`,
-      transactionId: 'VIP_WEEKLY_' + Date.now(),
+      transactionId: "VIP_WEEKLY_" + Date.now(),
       createdAt: serverTimestamp(),
     });
 
@@ -220,7 +223,7 @@ export const distributeWeeklyVIPReward = async (userId) => {
       message: `Weekly VIP reward of ${rewardAmount} added to balance`,
     };
   } catch (error) {
-    console.error('Error distributing weekly VIP reward:', error);
+    console.error("Error distributing weekly VIP reward:", error);
     throw error;
   }
 };
@@ -231,11 +234,11 @@ export const distributeWeeklyVIPReward = async (userId) => {
  */
 export const distributeMonthlyVIPReward = async (userId) => {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userRef = doc(db, "users", userId);
     const userDoc = await getDoc(userRef);
 
     if (!userDoc.exists()) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     const userData = userDoc.data();
@@ -245,7 +248,7 @@ export const distributeMonthlyVIPReward = async (userId) => {
     if (vipLevel !== VIP_LEVELS.VIP2) {
       return {
         success: false,
-        message: 'Monthly rewards are only for VIP 2 members',
+        message: "Monthly rewards are only for VIP 2 members",
       };
     }
 
@@ -254,7 +257,7 @@ export const distributeMonthlyVIPReward = async (userId) => {
     if (rewardAmount <= 0) {
       return {
         success: false,
-        message: 'No monthly reward configured',
+        message: "No monthly reward configured",
       };
     }
 
@@ -270,7 +273,12 @@ export const distributeMonthlyVIPReward = async (userId) => {
         : new Date(lastMonthlyReward);
 
       if (lastRewardDate > oneMonthAgo) {
-        const daysUntilNext = Math.ceil((lastRewardDate.getTime() + 30 * 24 * 60 * 60 * 1000 - now.getTime()) / (24 * 60 * 60 * 1000));
+        const daysUntilNext = Math.ceil(
+          (lastRewardDate.getTime() +
+            30 * 24 * 60 * 60 * 1000 -
+            now.getTime()) /
+            (24 * 60 * 60 * 1000),
+        );
         return {
           success: false,
           message: `Monthly reward already received. Next reward in ${daysUntilNext} days.`,
@@ -280,7 +288,7 @@ export const distributeMonthlyVIPReward = async (userId) => {
     }
 
     // Get or create wallet
-    const walletRef = doc(db, 'wallets', userId);
+    const walletRef = doc(db, "wallets", userId);
     const walletDoc = await getDoc(walletRef);
 
     if (!walletDoc.exists()) {
@@ -314,14 +322,14 @@ export const distributeMonthlyVIPReward = async (userId) => {
     });
 
     // Create transaction record
-    await addDoc(collection(db, 'transactions'), {
+    await addDoc(collection(db, "transactions"), {
       userId,
-      type: 'vip_monthly_reward',
+      type: "vip_monthly_reward",
       amount: rewardAmount,
-      status: 'completed',
+      status: "completed",
       vipLevel,
       description: `VIP ${vipLevel} Monthly Reward`,
-      transactionId: 'VIP_MONTHLY_' + Date.now(),
+      transactionId: "VIP_MONTHLY_" + Date.now(),
       createdAt: serverTimestamp(),
     });
 
@@ -332,7 +340,7 @@ export const distributeMonthlyVIPReward = async (userId) => {
       message: `Monthly VIP reward of ${rewardAmount} added to balance`,
     };
   } catch (error) {
-    console.error('Error distributing monthly VIP reward:', error);
+    console.error("Error distributing monthly VIP reward:", error);
     throw error;
   }
 };
@@ -347,7 +355,10 @@ export const checkAndDistributeVIPRewards = async (userId) => {
     try {
       await updateVIPLevel(userId);
     } catch (syncError) {
-      console.error('Error syncing VIP level before reward distribution:', syncError);
+      console.error(
+        "Error syncing VIP level before reward distribution:",
+        syncError,
+      );
       // Continue even if sync fails
     }
 
@@ -360,7 +371,7 @@ export const checkAndDistributeVIPRewards = async (userId) => {
     try {
       results.weekly = await distributeWeeklyVIPReward(userId);
     } catch (error) {
-      console.error('Error checking weekly reward:', error);
+      console.error("Error checking weekly reward:", error);
       results.weekly = { success: false, error: error.message };
     }
 
@@ -368,13 +379,13 @@ export const checkAndDistributeVIPRewards = async (userId) => {
     try {
       results.monthly = await distributeMonthlyVIPReward(userId);
     } catch (error) {
-      console.error('Error checking monthly reward:', error);
+      console.error("Error checking monthly reward:", error);
       results.monthly = { success: false, error: error.message };
     }
 
     return results;
   } catch (error) {
-    console.error('Error checking VIP rewards:', error);
+    console.error("Error checking VIP rewards:", error);
     throw error;
   }
 };
