@@ -36,7 +36,7 @@ export const VIP_REWARDS = {
   },
   [VIP_LEVELS.VIP2]: {
     weekly: 5, // 5 money per week
-    monthly: 20, // 2000 money per month
+    monthly: 20, // 20 money per month
   },
 };
 

@@ -1,17 +1,41 @@
-import React from "react";
-import { useSelector } from "react-redux";
+import React, { useEffect, useState } from "react";
+import { useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { useSettings } from '../contexts/SettingsContext';
 import { formatCurrency, getCurrencySymbol } from '../utils/currency';
+import { fetchTeam } from '../store/teamSlice';
 
 /**
  * Enhanced My Teams page with premium UI
  * Shows team cumulative recharge, commission details, and comprehensive statistics.
+ * All data is dynamically fetched from the database.
  */
 const MyTeams = () => {
-  const team = useSelector((state) => state.team);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
   const { settings } = useSettings();
+  const team = useSelector((state) => state.team);
+  const { user } = useSelector((state) => state.auth);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch team data on mount and when user changes
+  useEffect(() => {
+    if (user) {
+      dispatch(fetchTeam());
+    }
+  }, [user, dispatch]);
+
+  // Refresh team data
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await dispatch(fetchTeam()).unwrap();
+    } catch (error) {
+      console.error('Failed to refresh team data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Calculate growth percentages
   const memberGrowth = team.statistics?.yesterdayNewMembers 
@@ -77,67 +101,105 @@ const MyTeams = () => {
       </div>
 
       <div className="px-4 pt-6 space-y-6">
-        {/* Team Cumulative Recharge Card - Premium Design */}
-        <div className="relative bg-gradient-to-br from-yellow-400 via-orange-500 to-pink-500 rounded-3xl p-8 shadow-2xl text-white transform hover:scale-[1.02] transition-all duration-300 overflow-hidden">
-          {/* Decorative circles */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-white/20 rounded-full -mr-16 -mt-16"></div>
-          <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="bg-white/20 backdrop-blur-sm rounded-full p-2">
-                    <span className="text-2xl">💎</span>
-                  </div>
-                  <div>
-                    <div className="text-sm opacity-90 font-medium">Team Cumulative Recharge</div>
-                    <div className="text-xs opacity-70">Total from all team members</div>
-                  </div>
-                </div>
-                <div className="text-5xl font-black mb-2 tracking-tight">
-                  {formatCurrency(team.cumulativeRecharge || 0, settings.currency)}
-                </div>
-              </div>
-              <div className="text-7xl opacity-20">📊</div>
-            </div>
-            
-            {/* Growth indicator */}
-            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/20">
-              <div className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs font-semibold">
-                {monthGrowth > 0 ? '📈' : monthGrowth < 0 ? '📉' : '➡️'} {monthGrowth > 0 ? '+' : ''}{monthGrowth}% vs last month
-              </div>
+        {/* Loading State */}
+        {team.loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="text-white/80 font-medium">Loading team data...</p>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Daily Commission Details Button - Enhanced */}
-        <button
-          onClick={() => alert("Daily commission details feature coming soon")}
-          className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-700 hover:via-pink-700 hover:to-rose-700 text-white py-5 rounded-2xl font-bold shadow-2xl transform hover:scale-[1.02] hover:shadow-purple-500/50 transition-all duration-300 flex items-center justify-center gap-3 text-lg"
-        >
-          <span className="text-2xl">💵</span>
-          <span>Daily Commission Details</span>
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-
-        {/* Team Statistics Section - Premium Cards */}
-        <div className="bg-white/5 backdrop-blur-md rounded-3xl p-6 shadow-2xl border border-white/10">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-3">
-              <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl p-2">
-                <span className="text-2xl">📈</span>
-              </div>
-              <span>Team Statistics</span>
-            </h2>
-            <div className="text-xs text-white/60 bg-white/10 px-3 py-1 rounded-full">
-              Real-time data
+        {/* Error State */}
+        {team.error && !team.loading && (
+          <div className="bg-red-500/20 border border-red-500/50 rounded-2xl p-6 text-white">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-2xl">⚠️</span>
+              <h3 className="font-bold">Error Loading Team Data</h3>
             </div>
+            <p className="text-sm text-white/80 mb-4">{team.error}</p>
+            <button
+              onClick={handleRefresh}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition-colors"
+            >
+              Retry
+            </button>
           </div>
-          
-          <div className="grid grid-cols-2 gap-4">
+        )}
+
+        {/* Content when not loading - wrapped in fragment to avoid adjacent JSX */}
+        {!team.loading && (
+          <>
+            {/* Team Cumulative Recharge Card - Premium Design */}
+            <div className="relative bg-gradient-to-br from-yellow-400 via-orange-500 to-pink-500 rounded-3xl p-8 shadow-2xl text-white transform hover:scale-[1.02] transition-all duration-300 overflow-hidden">
+              {/* Decorative circles */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/20 rounded-full -mr-16 -mt-16"></div>
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
+              
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="bg-white/20 backdrop-blur-sm rounded-full p-2">
+                        <span className="text-2xl">💎</span>
+                      </div>
+                      <div>
+                        <div className="text-sm opacity-90 font-medium">Team Cumulative Recharge</div>
+                        <div className="text-xs opacity-70">Total from all team members</div>
+                      </div>
+                    </div>
+                    <div className="text-5xl font-black mb-2 tracking-tight">
+                      {formatCurrency(team.cumulativeRecharge || 0, settings.currency)}
+                    </div>
+                  </div>
+                  <div className="text-7xl opacity-20">📊</div>
+                </div>
+                
+                {/* Growth indicator */}
+                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/20">
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    {monthGrowth > 0 ? '📈' : monthGrowth < 0 ? '📉' : '➡️'} {monthGrowth > 0 ? '+' : ''}{monthGrowth}% vs last month
+                  </div>
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-white/30 transition-colors disabled:opacity-50"
+                    title="Refresh data"
+                  >
+                    {refreshing ? '🔄' : '↻'} Refresh
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Daily Commission Details Button - Enhanced */}
+            <button
+              onClick={() => alert("Daily commission details feature coming soon")}
+              className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-700 hover:via-pink-700 hover:to-rose-700 text-white py-5 rounded-2xl font-bold shadow-2xl transform hover:scale-[1.02] hover:shadow-purple-500/50 transition-all duration-300 flex items-center justify-center gap-3 text-lg"
+            >
+              <span className="text-2xl">💵</span>
+              <span>Daily Commission Details</span>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            {/* Team Statistics Section - Premium Cards */}
+            <div className="bg-white/5 backdrop-blur-md rounded-3xl p-6 shadow-2xl border border-white/10">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold flex items-center gap-3">
+                  <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl p-2">
+                    <span className="text-2xl">📈</span>
+                  </div>
+                  <span>Team Statistics</span>
+                </h2>
+                <div className="text-xs text-white/60 bg-white/10 px-3 py-1 rounded-full">
+                  Real-time data
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
             {/* Today's new members */}
             <div className="group relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-5 shadow-xl transform hover:scale-105 hover:shadow-blue-500/50 transition-all duration-300 overflow-hidden">
               <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -mr-10 -mt-10"></div>
@@ -248,30 +310,32 @@ const MyTeams = () => {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+              </div>
+            </div>
 
-        {/* Performance Summary Card */}
-        <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-md rounded-3xl p-6 shadow-xl border border-white/10">
-          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <span className="text-2xl">⚡</span>
-            Quick Insights
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="text-xs text-white/60 mb-1">Member Growth</div>
-              <div className={`text-lg font-bold ${memberGrowth > 0 ? 'text-green-400' : memberGrowth < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                {memberGrowth > 0 ? '+' : ''}{memberGrowth}%
+            {/* Performance Summary Card */}
+            <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-md rounded-3xl p-6 shadow-xl border border-white/10">
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <span className="text-2xl">⚡</span>
+                Quick Insights
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="text-xs text-white/60 mb-1">Member Growth</div>
+                  <div className={`text-lg font-bold ${memberGrowth > 0 ? 'text-green-400' : memberGrowth < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                    {memberGrowth > 0 ? '+' : ''}{memberGrowth}%
+                  </div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="text-xs text-white/60 mb-1">Recharge Growth</div>
+                  <div className={`text-lg font-bold ${rechargeGrowth > 0 ? 'text-green-400' : rechargeGrowth < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                    {rechargeGrowth > 0 ? '+' : ''}{rechargeGrowth}%
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="text-xs text-white/60 mb-1">Recharge Growth</div>
-              <div className={`text-lg font-bold ${rechargeGrowth > 0 ? 'text-green-400' : rechargeGrowth < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                {rechargeGrowth > 0 ? '+' : ''}{rechargeGrowth}%
-              </div>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

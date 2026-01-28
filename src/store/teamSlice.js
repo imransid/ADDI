@@ -21,53 +21,33 @@ export const fetchTeam = createAsyncThunk(
   }
 );
 
-// Example team categories and members
+// Initial state - all data will be fetched from database
 const initialState = {
-  cumulativeRecharge: 32453,
+  userId: null,
+  cumulativeRecharge: 0,
   tiers: {
     B: {
       percentage: 11,
-      members: [
-        { account: '60116****891', level: 'B', product: '--', tier: 'B' },
-        { account: '60117****215', level: 'B', product: '--', tier: 'B' },
-        { account: '60112****213', level: 'B', product: '--', tier: 'B' },
-        { account: '60111****066', level: 'B', product: '--', tier: 'B' },
-        { account: '60113****123', level: 'B', product: '--', tier: 'B' },
-      ],
+      members: [],
     },
     C: {
       percentage: 4,
-      members: Array.from({ length: 14 }, (_, i) => ({
-        account: `6011${i}****${String(i).padStart(3, '0')}`,
-        level: 'C',
-        product: '--',
-        tier: 'C',
-      })),
+      members: [],
     },
     D: {
       percentage: 2,
-      members: Array.from({ length: 10 }, (_, i) => ({
-        account: `6012${i}****${String(i).padStart(3, '0')}`,
-        level: 'D',
-        product: '--',
-        tier: 'D',
-      })),
+      members: [],
     },
   },
   statistics: {
     todayNewMembers: 0,
     yesterdayNewMembers: 0,
     todayRechargeAmount: 0,
-    yesterdayRechargeAmount: 1163,
-    currentMonthRechargeAmount: 14713,
-    lastMonthRechargeAmount: 16740,
+    yesterdayRechargeAmount: 0,
+    currentMonthRechargeAmount: 0,
+    lastMonthRechargeAmount: 0,
   },
-  validMembers: [
-    { account: '60116****891', level: 'B', product: '--', tier: 'B' },
-    { account: '60117****215', level: 'B', product: '--', tier: 'B' },
-    { account: '60112****213', level: 'B', product: '--', tier: 'B' },
-    { account: '60111****066', level: 'B', product: '--', tier: 'B' },
-  ],
+  validMembers: [],
   invalidMembers: [],
   loading: false,
   error: null,
@@ -98,7 +78,16 @@ const teamSlice = createSlice({
       })
       .addCase(fetchTeam.fulfilled, (state, action) => {
         state.loading = false;
-        return { ...state, ...action.payload, error: null };
+        state.error = null;
+        // Merge payload data into state
+        if (action.payload) {
+          state.userId = action.payload.userId || state.userId;
+          state.cumulativeRecharge = action.payload.cumulativeRecharge ?? 0;
+          state.tiers = action.payload.tiers || state.tiers;
+          state.statistics = action.payload.statistics || state.statistics;
+          state.validMembers = action.payload.validMembers || [];
+          state.invalidMembers = action.payload.invalidMembers || [];
+        }
       })
       .addCase(fetchTeam.rejected, (state, action) => {
         state.loading = false;

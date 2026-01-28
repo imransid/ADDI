@@ -13,6 +13,7 @@ import {
   query,
   where,
   addDoc,
+  deleteDoc,
   serverTimestamp,
   increment,
 } from 'firebase/firestore';
@@ -634,58 +635,225 @@ export const teamAPI = {
 
       const user = JSON.parse(userStr);
 
-      // Get team data from Firestore
-      const teamDoc = await getDoc(doc(db, 'teams', user.id));
+      // Helper function to get start of day
+      const getStartOfDay = (date) => {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      };
 
-      if (teamDoc.exists()) {
-        const teamData = teamDoc.data();
-        return {
-          success: true,
-          data: teamData,
-        };
+      // Helper function to get start of month
+      const getStartOfMonth = (date) => {
+        const d = new Date(date);
+        d.setDate(1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      };
+
+      // Get all users referred by this user
+      const usersRef = collection(db, 'users');
+      const referralsQuery = query(usersRef, where('referredBy', '==', user.id));
+      const referralsSnapshot = await getDocs(referralsQuery);
+      
+      const allReferrals = referralsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Calculate dates
+      const now = new Date();
+      const todayStart = getStartOfDay(now);
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const yesterdayEnd = new Date(todayStart);
+      
+      const currentMonthStart = getStartOfMonth(now);
+      const lastMonthStart = new Date(currentMonthStart);
+      lastMonthStart.setMonth(lastMonthStart.getMonth() - 1);
+      const lastMonthEnd = new Date(currentMonthStart);
+
+      // Calculate statistics
+      let todayNewMembers = 0;
+      let yesterdayNewMembers = 0;
+      let todayRechargeAmount = 0;
+      let yesterdayRechargeAmount = 0;
+      let currentMonthRechargeAmount = 0;
+      let lastMonthRechargeAmount = 0;
+      let cumulativeRecharge = 0;
+
+      // Get all transactions for team members
+      const transactionsRef = collection(db, 'transactions');
+      
+      // Process each referral
+      for (const referral of allReferrals) {
+        // Convert Firestore Timestamp to Date
+        let referralCreatedAt = null;
+        if (referral.createdAt) {
+          if (referral.createdAt.toMillis) {
+            referralCreatedAt = new Date(referral.createdAt.toMillis());
+          } else if (referral.createdAt.toDate) {
+            referralCreatedAt = referral.createdAt.toDate();
+          } else if (referral.createdAt.seconds) {
+            referralCreatedAt = new Date(referral.createdAt.seconds * 1000);
+          } else {
+            referralCreatedAt = new Date(referral.createdAt);
+          }
+        }
+
+        // Count new members
+        if (referralCreatedAt && !isNaN(referralCreatedAt.getTime())) {
+          if (referralCreatedAt >= todayStart) {
+            todayNewMembers++;
+          } else if (referralCreatedAt >= yesterdayStart && referralCreatedAt < todayStart) {
+            yesterdayNewMembers++;
+          }
+        }
+
+        // Get all recharge transactions for this referral
+        const referralTransactionsQuery = query(
+          transactionsRef,
+          where('userId', '==', referral.id),
+          where('type', '==', 'recharge')
+        );
+        const referralTransactionsSnapshot = await getDocs(referralTransactionsQuery);
+        
+        referralTransactionsSnapshot.forEach((txnDoc) => {
+          const txn = txnDoc.data();
+          // Only count approved or completed recharges
+          if (txn.status === 'approved' || txn.status === 'completed') {
+            const txnAmount = typeof txn.amount === 'number' ? txn.amount : parseFloat(txn.amount) || 0;
+            
+            // Convert Firestore Timestamp to Date
+            let txnDate = null;
+            if (txn.createdAt) {
+              if (txn.createdAt.toMillis) {
+                txnDate = new Date(txn.createdAt.toMillis());
+              } else if (txn.createdAt.toDate) {
+                txnDate = txn.createdAt.toDate();
+              } else if (txn.createdAt.seconds) {
+                txnDate = new Date(txn.createdAt.seconds * 1000);
+              } else {
+                txnDate = new Date(txn.createdAt);
+              }
+            }
+
+            if (txnDate && !isNaN(txnDate.getTime())) {
+              // Add to cumulative recharge
+              cumulativeRecharge += txnAmount;
+
+              // Today's recharge
+              if (txnDate >= todayStart) {
+                todayRechargeAmount += txnAmount;
+              }
+              // Yesterday's recharge
+              else if (txnDate >= yesterdayStart && txnDate < todayStart) {
+                yesterdayRechargeAmount += txnAmount;
+              }
+              // Current month recharge
+              if (txnDate >= currentMonthStart) {
+                currentMonthRechargeAmount += txnAmount;
+              }
+              // Last month recharge
+              else if (txnDate >= lastMonthStart && txnDate < currentMonthStart) {
+                lastMonthRechargeAmount += txnAmount;
+              }
+            }
+          }
+        });
       }
 
-      // Return default structure if team doesn't exist
-      const defaultTeam = {
+      // Calculate tier members based on actual data
+      // Tier B: Members who have purchased products
+      // Tier C: Members who have recharged
+      // Tier D: Members who have not purchased or recharged
+      const tierB = [];
+      const tierC = [];
+      const tierD = [];
+      const validMembers = [];
+      const invalidMembers = [];
+
+      for (const referral of allReferrals) {
+        // Check if member has purchased products
+        const userProductsRef = collection(db, 'userProducts');
+        const purchaseQuery = query(userProductsRef, where('userId', '==', referral.id));
+        const purchaseSnapshot = await getDocs(purchaseQuery);
+        const hasPurchased = !purchaseSnapshot.empty;
+
+        // Check if member has recharged (approved or completed)
+        const rechargeQuery = query(
+          transactionsRef,
+          where('userId', '==', referral.id),
+          where('type', '==', 'recharge')
+        );
+        const rechargeSnapshot = await getDocs(rechargeQuery);
+        const hasRecharged = rechargeSnapshot.docs.some(doc => {
+          const data = doc.data();
+          return data.status === 'approved' || data.status === 'completed';
+        });
+
+        const memberData = {
+          id: referral.id,
+          account: referral.phone || referral.id.substring(0, 8) + '****',
+          name: referral.name || 'Unknown',
+          phone: referral.phone || 'N/A',
+          level: hasPurchased ? 'B' : hasRecharged ? 'C' : 'D',
+          tier: hasPurchased ? 'B' : hasRecharged ? 'C' : 'D',
+          product: hasPurchased ? 'Yes' : '--',
+          createdAt: referral.createdAt,
+        };
+
+        if (hasPurchased) {
+          tierB.push(memberData);
+          validMembers.push(memberData);
+        } else if (hasRecharged) {
+          tierC.push(memberData);
+          validMembers.push(memberData);
+        } else {
+          tierD.push(memberData);
+          invalidMembers.push(memberData);
+        }
+      }
+
+      // Build team data structure
+      const teamData = {
         userId: user.id,
-        cumulativeRecharge: 0,
+        cumulativeRecharge: cumulativeRecharge,
         tiers: {
           B: {
             percentage: 11,
-            members: [],
+            members: tierB,
           },
           C: {
             percentage: 4,
-            members: [],
+            members: tierC,
           },
           D: {
             percentage: 2,
-            members: [],
+            members: tierD,
           },
         },
         statistics: {
-          todayNewMembers: 0,
-          yesterdayNewMembers: 0,
-          todayRechargeAmount: 0,
-          yesterdayRechargeAmount: 0,
-          currentMonthRechargeAmount: 0,
-          lastMonthRechargeAmount: 0,
+          todayNewMembers: todayNewMembers,
+          yesterdayNewMembers: yesterdayNewMembers,
+          todayRechargeAmount: todayRechargeAmount,
+          yesterdayRechargeAmount: yesterdayRechargeAmount,
+          currentMonthRechargeAmount: currentMonthRechargeAmount,
+          lastMonthRechargeAmount: lastMonthRechargeAmount,
         },
-        validMembers: [],
-        invalidMembers: [],
+        validMembers: validMembers,
+        invalidMembers: invalidMembers,
+        updatedAt: serverTimestamp(),
       };
 
-      // Create team document with default data
-      await setDoc(doc(db, 'teams', user.id), {
-        ...defaultTeam,
-        updatedAt: serverTimestamp(),
-      });
+      // Update team document in Firestore
+      await setDoc(doc(db, 'teams', user.id), teamData, { merge: true });
 
       return {
         success: true,
-        data: defaultTeam,
+        data: teamData,
       };
     } catch (error) {
+      console.error('Error fetching team data:', error);
       throw new Error(error.message || 'Failed to fetch team data');
     }
   },
@@ -833,18 +1001,38 @@ export const productAPI = {
         throw new Error('Product is no longer available');
       }
 
-      // Get user wallet
-      const walletDoc = await getDoc(doc(db, 'wallets', user.id));
+      // Get user wallet - use transaction to ensure atomic read and write
+      const walletRef = doc(db, 'wallets', user.id);
+      const walletDoc = await getDoc(walletRef);
+      
       if (!walletDoc.exists()) {
         throw new Error('Wallet not found');
       }
 
       const walletData = walletDoc.data();
-      const rechargeWallet = walletData.rechargeWallet || 0;
+      const rechargeWallet = walletData.rechargeWallet != null ? Number(walletData.rechargeWallet) : 0;
+      const balanceWallet = walletData.balanceWallet != null ? Number(walletData.balanceWallet) : 0;
+      const productPrice = Number(productData.price) || 0;
 
-      // Check if user has enough balance
-      if (rechargeWallet < productData.price) {
-        throw new Error('Insufficient balance in recharge wallet');
+      // Validate product price
+      if (isNaN(productPrice) || productPrice <= 0) {
+        throw new Error('Invalid product price');
+      }
+
+      // Validate wallet balances are numbers
+      if (isNaN(rechargeWallet) || isNaN(balanceWallet)) {
+        throw new Error('Invalid wallet balance data');
+      }
+
+      // Check if user has enough balance in recharge wallet (primary check for purchases)
+      if (rechargeWallet < productPrice) {
+        throw new Error(`Insufficient balance in recharge wallet. Available: ${rechargeWallet.toFixed(2)}, Required: ${productPrice.toFixed(2)}`);
+      }
+
+      // Warn if balanceWallet will go negative after purchase (but still allow purchase)
+      // This can happen if user withdrew from balanceWallet before purchasing
+      if (balanceWallet < productPrice) {
+        console.warn(`Purchase will cause balanceWallet to go negative. Current: ${balanceWallet.toFixed(2)}, Purchase: ${productPrice.toFixed(2)}`);
       }
 
       // Check if this is user's first purchase
@@ -858,9 +1046,14 @@ export const productAPI = {
       const userDoc = await getDoc(userRef);
       const userData = userDoc.exists() ? userDoc.data() : null;
 
-      // Deduct from recharge wallet
-      await updateDoc(doc(db, 'wallets', user.id), {
-        rechargeWallet: increment(-productData.price),
+      // Deduct from both recharge wallet AND balance wallet
+      // This ensures consistency since recharge approval adds to both wallets
+      // We always deduct from both to keep them synchronized
+      // Note: We only check rechargeWallet balance, but deduct from both
+      // This handles cases where balanceWallet might be lower due to withdrawals
+      await updateDoc(walletRef, {
+        rechargeWallet: increment(-productPrice),
+        balanceWallet: increment(-productPrice),
         updatedAt: serverTimestamp(),
       });
 
@@ -919,6 +1112,10 @@ export const productAPI = {
           ? Math.floor(validityDaysNumber)
           : (derivedValidityDays ?? 45);
 
+      // Calculate first earning window start time (24 hours after purchase)
+      const purchaseTime = new Date();
+      const firstEarnWindowStart = new Date(purchaseTime.getTime() + 24 * 60 * 60 * 1000); // 24 hours later
+
       const purchaseRef = await addDoc(collection(db, 'userProducts'), {
         userId: user.id,
         productId: productId,
@@ -932,10 +1129,11 @@ export const productAPI = {
         validityDays: validityDays, // Preferred validity duration (days)
         earnAmount: productData.earnAmount || 0, // Daily earn amount from product
         // New earning schedule:
+        // - First earning window starts 24 hours after purchase
         // - 3-hour earning window every 24 hours
         // - After the 3-hour window ends, user waits 21 hours until the next window
         // We store the next/current window start here.
-        earnWindowStartAt: serverTimestamp(),
+        earnWindowStartAt: firstEarnWindowStart,
         lastEarnAttempt: null, // Legacy (no longer used for timing)
         totalEarnings: 0,
         createdAt: serverTimestamp(),
@@ -1308,17 +1506,47 @@ export const productAPI = {
 
 // Admin API
 export const adminAPI = {
-  // Get all members (consumers)
+  // Get all members (consumers) with wallet data (balance, total earnings, etc.)
   getAllMembers: async (token) => {
     try {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('role', '==', 'consumer'));
       const querySnapshot = await getDocs(q);
 
-      const members = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
+      const membersRaw = querySnapshot.docs.map((d) => ({
+        id: d.id,
+        userId: d.id,
+        ...d.data(),
       }));
+
+      // Fetch wallet for each member in parallel
+      const members = await Promise.all(
+        membersRaw.map(async (member) => {
+          try {
+            const walletDoc = await getDoc(doc(db, 'wallets', member.id));
+            const w = walletDoc.exists() ? walletDoc.data() : {};
+            const balanceWallet = w.balanceWallet != null ? Number(w.balanceWallet) : 0;
+            const rechargeWallet = w.rechargeWallet != null ? Number(w.rechargeWallet) : 0;
+            const totalEarnings = w.totalEarnings != null ? Number(w.totalEarnings) : 0;
+            const totalWithdrawals = w.totalWithdrawals != null ? Number(w.totalWithdrawals) : 0;
+            return {
+              ...member,
+              balanceWallet: isNaN(balanceWallet) ? 0 : balanceWallet,
+              rechargeWallet: isNaN(rechargeWallet) ? 0 : rechargeWallet,
+              totalEarnings: isNaN(totalEarnings) ? 0 : totalEarnings,
+              totalWithdrawals: isNaN(totalWithdrawals) ? 0 : totalWithdrawals,
+            };
+          } catch {
+            return {
+              ...member,
+              balanceWallet: 0,
+              rechargeWallet: 0,
+              totalEarnings: 0,
+              totalWithdrawals: 0,
+            };
+          }
+        })
+      );
 
       return {
         success: true,
@@ -1614,6 +1842,161 @@ export const adminAPI = {
       };
     } catch (error) {
       throw new Error(error.message || 'Failed to update recharge status');
+    }
+  },
+
+  // Get member details with all related data
+  getMemberDetails: async (token, memberId) => {
+    try {
+      // Get user data
+      const userDoc = await getDoc(doc(db, 'users', memberId));
+      if (!userDoc.exists()) {
+        throw new Error('Member not found');
+      }
+      const userData = { id: userDoc.id, userId: userDoc.id, ...userDoc.data() };
+
+      // Get wallet data
+      const walletDoc = await getDoc(doc(db, 'wallets', memberId));
+      const walletData = walletDoc.exists() ? walletDoc.data() : {};
+      const balanceWallet = walletData.balanceWallet != null ? Number(walletData.balanceWallet) : 0;
+      const rechargeWallet = walletData.rechargeWallet != null ? Number(walletData.rechargeWallet) : 0;
+      const totalEarnings = walletData.totalEarnings != null ? Number(walletData.totalEarnings) : 0;
+      const totalWithdrawals = walletData.totalWithdrawals != null ? Number(walletData.totalWithdrawals) : 0;
+      const incomeToday = walletData.incomeToday != null ? Number(walletData.incomeToday) : 0;
+      const incomeYesterday = walletData.incomeYesterday != null ? Number(walletData.incomeYesterday) : 0;
+      const lossToday = walletData.lossToday != null ? Number(walletData.lossToday) : 0;
+      const lossTotal = walletData.lossTotal != null ? Number(walletData.lossTotal) : 0;
+
+      // Get all transactions for this user
+      const transactionsRef = collection(db, 'transactions');
+      const transactionsQuery = query(transactionsRef, where('userId', '==', memberId));
+      const transactionsSnapshot = await getDocs(transactionsQuery);
+      const transactions = transactionsSnapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      })).sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || 0;
+        const timeB = b.createdAt?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
+      // Get purchased products
+      const userProductsRef = collection(db, 'userProducts');
+      const userProductsQuery = query(userProductsRef, where('userId', '==', memberId));
+      const userProductsSnapshot = await getDocs(userProductsQuery);
+      const userProducts = userProductsSnapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      })).sort((a, b) => {
+        const timeA = a.purchaseDate?.toMillis?.() || 0;
+        const timeB = b.purchaseDate?.toMillis?.() || 0;
+        return timeB - timeA;
+      });
+
+      // Get last earnings (type='earn' transactions)
+      const lastEarnings = transactions
+        .filter((t) => t.type === 'earn')
+        .slice(0, 10); // Last 10 earnings
+
+      // Get last approved recharge amount
+      const approvedRecharges = transactions
+        .filter((t) => t.type === 'recharge' && (t.status === 'approved' || t.status === 'completed'))
+        .sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          return timeB - timeA; // Most recent first
+        });
+      
+      const lastRechargeAmount = approvedRecharges.length > 0 
+        ? (Number(approvedRecharges[0].amount) || 0)
+        : 0;
+      const lastRechargeDate = approvedRecharges.length > 0 
+        ? approvedRecharges[0].createdAt 
+        : null;
+
+      return {
+        success: true,
+        data: {
+          user: userData,
+          wallet: {
+            balanceWallet: isNaN(balanceWallet) ? 0 : balanceWallet,
+            rechargeWallet: isNaN(rechargeWallet) ? 0 : rechargeWallet,
+            lastRechargeAmount: isNaN(lastRechargeAmount) ? 0 : lastRechargeAmount,
+            lastRechargeDate: lastRechargeDate,
+            totalEarnings: isNaN(totalEarnings) ? 0 : totalEarnings,
+            totalWithdrawals: isNaN(totalWithdrawals) ? 0 : totalWithdrawals,
+            incomeToday: isNaN(incomeToday) ? 0 : incomeToday,
+            incomeYesterday: isNaN(incomeYesterday) ? 0 : incomeYesterday,
+            lossToday: isNaN(lossToday) ? 0 : lossToday,
+            lossTotal: isNaN(lossTotal) ? 0 : lossTotal,
+          },
+          transactions,
+          purchases: userProducts,
+          lastEarnings,
+        },
+      };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to fetch member details');
+    }
+  },
+
+  // Update user data
+  updateMemberUser: async (token, memberId, userData) => {
+    try {
+      const userRef = doc(db, 'users', memberId);
+      await updateDoc(userRef, {
+        ...userData,
+        updatedAt: serverTimestamp(),
+      });
+      return { success: true, data: { id: memberId } };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update user data');
+    }
+  },
+
+  // Update wallet data
+  updateMemberWallet: async (token, memberId, walletData) => {
+    try {
+      const walletRef = doc(db, 'wallets', memberId);
+      const updates = {};
+      if (walletData.balanceWallet !== undefined) updates.balanceWallet = Number(walletData.balanceWallet);
+      if (walletData.rechargeWallet !== undefined) updates.rechargeWallet = Number(walletData.rechargeWallet);
+      if (walletData.totalEarnings !== undefined) updates.totalEarnings = Number(walletData.totalEarnings);
+      if (walletData.totalWithdrawals !== undefined) updates.totalWithdrawals = Number(walletData.totalWithdrawals);
+      if (walletData.incomeToday !== undefined) updates.incomeToday = Number(walletData.incomeToday);
+      if (walletData.incomeYesterday !== undefined) updates.incomeYesterday = Number(walletData.incomeYesterday);
+      if (walletData.lossToday !== undefined) updates.lossToday = Number(walletData.lossToday);
+      if (walletData.lossTotal !== undefined) updates.lossTotal = Number(walletData.lossTotal);
+      updates.updatedAt = serverTimestamp();
+      await updateDoc(walletRef, updates);
+      return { success: true, data: { id: memberId } };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update wallet data');
+    }
+  },
+
+  // Update transaction
+  updateTransaction: async (token, transactionId, transactionData) => {
+    try {
+      const transactionRef = doc(db, 'transactions', transactionId);
+      await updateDoc(transactionRef, {
+        ...transactionData,
+        updatedAt: serverTimestamp(),
+      });
+      return { success: true, data: { id: transactionId } };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to update transaction');
+    }
+  },
+
+  // Delete transaction
+  deleteTransaction: async (token, transactionId) => {
+    try {
+      const transactionRef = doc(db, 'transactions', transactionId);
+      await deleteDoc(transactionRef);
+      return { success: true, data: { id: transactionId } };
+    } catch (error) {
+      throw new Error(error.message || 'Failed to delete transaction');
     }
   },
 };
